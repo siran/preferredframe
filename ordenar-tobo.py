@@ -9,7 +9,7 @@ import shutil
 import sys
 
 files = glob.glob(os.path.join('..', 'tobo','*.jpg'))
-# srcdir = os.path.join('..', 'tobo-ordenado','*', '*', '*.jpg')
+# srcdir = os.path.join('..', 'tobo-ordenado','*', '*.jpg')
 # print(srcdir)
 # files = glob.glob(srcdir)
 # print(len(files))

@@ -7,7 +7,7 @@ set INTERVAL=120
 :: Transfiriendo archivos
 echo Transfiriendo archivos del cel al compu (borrando en el cel luego de transferido)
 REM /log="C:\Users\Hp_user\Documents\MEGA\michelson\transferlogs\transfer.log"
-WinSCP.COM /ini=nul /script="C:\Users\Hp_user\Documents\MEGA\cel2pc_winscp_script.txt" /logsize=1M /loglevel 0
+WinSCP.COM /ini=nul /script="C:\Users\Hp_user\Documents\MEGA\scripts\cel2pc_winscp_script.txt" /logsize=1M /loglevel 0
 
 :: Generando comprimido :::::::::::::::::::::::
 REM echo Comprimiendo fotos y descartando fotos luego de compresion...

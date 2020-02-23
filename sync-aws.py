@@ -12,16 +12,23 @@ dest_bucket = "s3://anmichel/usb/experimentos/one-way/fotos"
 
 print(dest_bucket)
 
-directories = files = glob.glob('tobo-ordenado/*')
-
+directories = files = glob.glob(os.path.join('..','tobo-ordenado','*'))
+print(len(directories))
 ignore_dirs = ['size-zero']
 for directory in tqdm(directories):
 	if os.path.basename(directory) in ignore_dirs:
 		continue
 		
+	basedir = os.path.basename(directory)
+		
 	tqdm.write(directory)
-	command = f"aws s3 sync .\{directory} {dest_bucket}/{directory}"
+	dryrun="--dryrun"
+	dryrun=""
+	command = f"aws s3 {dryrun} --only-show-errors --delete sync {directory} {dest_bucket}/{basedir}"
+
 	tqdm.write(command)
+	# sys.exit()
+
 	
 	a = subprocess.call(command, shell=True)
 	# p = subprocess.Popen('dir ..', stdout=subprocess.PIPE, stderr = None, shell=True)
