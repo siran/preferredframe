@@ -24,7 +24,7 @@ for directory in tqdm(directories):
 	tqdm.write(directory)
 	dryrun="--dryrun"
 	dryrun=""
-	command = f"aws s3 {dryrun} --only-show-errors --delete sync {directory} {dest_bucket}/{basedir}"
+	command = f"aws s3 {dryrun} sync {directory} {dest_bucket}/{basedir}"
 
 	tqdm.write(command)
 	# sys.exit()
