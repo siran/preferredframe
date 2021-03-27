@@ -15,14 +15,19 @@ print(dest_bucket)
 directories = files = glob.glob('tobo-ordenado/*')
 
 ignore_dirs = ['size-zero']
+fecha_minima = '2021-03-06'
 for directory in tqdm(directories):
 	if os.path.basename(directory) in ignore_dirs:
 		continue
-		
+
+	if directory < fecha_minima:
+		print(f"Transferring only > {fecha_minima}")
+		continue
+
 	tqdm.write(directory)
 	command = f"aws s3 sync .\{directory} {dest_bucket}/{directory}"
 	tqdm.write(command)
-	
+
 	a = subprocess.call(command, shell=True)
 	# p = subprocess.Popen('dir ..', stdout=subprocess.PIPE, stderr = None, shell=True)
 
