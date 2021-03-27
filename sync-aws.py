@@ -19,6 +19,11 @@ for directory in tqdm(directories):
 	if os.path.basename(directory) in ignore_dirs:
 		continue
 		
+	# print(directory)
+	if "2021-03-06" not in directory: 
+		continue
+	# sys.exit()
+	
 	basedir = os.path.basename(directory)
 		
 	tqdm.write(directory)

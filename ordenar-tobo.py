@@ -7,6 +7,7 @@ from pprint import pprint
 from tqdm import tqdm
 import shutil
 import sys
+import time
 
 files = glob.glob(os.path.join('..', 'tobo','*.jpg'))
 # srcdir = os.path.join('..', 'tobo-ordenado','*', '*.jpg')
@@ -35,11 +36,18 @@ for file in tqdm(files):
 		
 		image = Image(open(file,'rb'))
 		# pprint(dir(image))
-		datetime = image.get("datetime")
-		if not datetime:	
-			print('no date time')
-			print(src)
-			break
+		# print(image)
+		try:
+			datetime = image.get("datetime")
+			if not datetime:	
+				print('no date time')
+				print(src)
+				continue
+				# break
+		except Exception as error:
+			print(error)
+			# time.sleep(5)
+			continue
 
 		# datetime = image.datetime
 		datestr = datetime.split(" ")[0]
