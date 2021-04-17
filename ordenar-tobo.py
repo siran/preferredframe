@@ -1,5 +1,6 @@
 ### ordenar archivos en tobo
 
+import uuid
 import glob
 import os
 from exif import Image
@@ -9,10 +10,12 @@ import shutil
 import sys
 import time
 
-files = glob.glob(os.path.join('..', 'tobo','*.jpg'))
-srcdir = os.path.join('..', 'tobo-ordenado','*', '*.jpg')
+__SOURCE__      =  '../tobo-local'
+__DESTINATION__ = '../tobo-local-ordenado'
+
+srcdir = os.path.join(__SOURCE__,'*', '*.jpg')
 # print(srcdir)
-files = glob.glob(srcdir)
+files = glob.glob(srcdir, recursive=True)
 # print(len(files))
 # sys.exit()
 c=0
@@ -54,14 +57,14 @@ for file in tqdm(files):
 		timestr = datetime.split(" ")[1]
 		year,month,day = datestr.split(":")
 		hour,minutes,seconds = timestr.split(":")
-		basedir = 'tobo-ordenado'
+		basedir = __DESTINATION__
 		dirname = f"{year}-{month}-{day}"
 
 		minutes = '00' if int(minutes) < 30 else '30'
 
 
 		subdirname = f"n{year[-2:]}{month}{day}_{hour}{minutes}"
-		dstdir = os.path.join('..', basedir, dirname, subdirname)
+		dstdir = os.path.join(__DESTINATION__, dirname, subdirname)
 		# tqdm.write(dstdir)
 
 		if not os.path.exists(dstdir):
@@ -69,11 +72,22 @@ for file in tqdm(files):
 
 		try:
 			# tqdm.write(f"{src}->{dstdir}")
-			shutil.move(src, dstdir)
+			destinations = [
+				os.path.join(dstdir, basename),
+				# os.path.join(__SOURCE__, basename),
+				# os.path.join(__SOURCE__, basename) + f'.{uuid.uuid1()}.jpg',
+			]
+			for destination in destinations:
+				if not os.path.exists(destination):
+					shutil.move(src, destination)
+					tqdm.write(f'moved to {destination}')
+					break
+			else:
+				print(f'File already exists in destination. Not doing anything. {src}')
 			# sys.exit()
 		except Exception as error:
 			if "already exists" in str(error):
-				print(f"Ignoring: {error}")
+				print(f"Ignoring error: {error}")
 
 		# if c>100:
 			# break
