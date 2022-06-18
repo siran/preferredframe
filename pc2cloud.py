@@ -16,4 +16,4 @@ while True:
     for _ in range(30*60):
       time.sleep(1)
   except Exception:
-    continue
+    input('continuar'?)

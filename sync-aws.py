@@ -22,35 +22,35 @@ ignore_dirs = ['size-zero']
 fecha_minima = '2020-05-31'
 fecha_maxima = '2020-07-17'
 for directory in tqdm(directories):
-	if os.path.basename(directory) in ignore_dirs or "zero" in directory:
-		continue
+    if os.path.basename(directory) in ignore_dirs or "zero" in directory:
+        continue
 
-	tqdm.write(os.path.basename(directory))
-	# if not fecha_minima < os.path.basename(directory) < fecha_maxima:
-		# tqdm.write(f"Transferring only {fecha_minima} < date < {fecha_maxima}")
-		# continue
+    tqdm.write(os.path.basename(directory))
+    # if not fecha_minima < os.path.basename(directory) < fecha_maxima:
+        # tqdm.write(f"Transferring only {fecha_minima} < date < {fecha_maxima}")
+        # continue
 
-	basedir = os.path.basename(directory)
+    basedir = os.path.basename(directory)
 
-	tqdm.write(directory)
-	dryrun="--dryrun"
-	dryrun=""
-	command = f"aws s3 {dryrun} sync {directory} {dest_bucket}/{basedir}"
+    tqdm.write(directory)
+    dryrun="--dryrun"
+    dryrun=""
+    command = f"aws s3 {dryrun} sync {directory} {dest_bucket}/{basedir}"
 
-	tqdm.write(command)
+    tqdm.write(command)
 
-	# sys.exit()
+    # sys.exit()
 
 
-	a = subprocess.call(command, shell=True)
-	# p = subprocess.Popen('dir ..', stdout=subprocess.PIPE, stderr = None, shell=True)
+    a = subprocess.call(command, shell=True)
+    # p = subprocess.Popen('dir ..', stdout=subprocess.PIPE, stderr = None, shell=True)
 
-	# for line in iter(p.stdout.readline, ''):
-		# print(line)
-		# input()
+    # for line in iter(p.stdout.readline, ''):
+        # print(line)
+        # input()
 
-	# p.stdout.flush()
-	# p.stdout.close()
+    # p.stdout.flush()
+    # p.stdout.close()
 
-	# print ("Done")
-	print(a)
+    # print ("Done")
+    print(a)
