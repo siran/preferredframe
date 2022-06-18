@@ -9,7 +9,6 @@ from tqdm import tqdm
 import shutil
 import sys
 import time
-<<<<<<< HEAD
 import traceback
 
 print("inicio")
@@ -23,26 +22,6 @@ files = glob.glob(srcdir, recursive=True)
 print(f"{len(files)} loaded")
 # sys.exit()
 # print(len(files))
-=======
-import traceback as tb
-
-print("Ordenando el tobo de fotos...")
-
-# source
-srcdir = os.path.join('..', 'tobo', '**', '*.jpg')
-
-# # cambio para transferir 2019
-# srcdir = os.path.join('..', 'tobo-ordenado-2019-no-transferido','**', '*.jpg')
-
-# destination
-DESTINATION = 'tobo-ordenado-2019-no-transferido'
-DESTINATION = 'tobo-ordenado'
-
-print(f'{srcdir=}')
-files = glob.glob(srcdir, recursive=True)
-print(f'{len(files)=}')
-print(files[1:10])
->>>>>>> 1a0289011a19c37f3bcfe4880a6653a66776ba59
 # sys.exit()
 c=0
 for file in tqdm(files):
@@ -51,9 +30,10 @@ for file in tqdm(files):
 		src = file
 		basename = os.path.basename(src)
 		basedir = os.path.dirname(src)
+
 		fsize = os.path.getsize(src)
 		if fsize == 0:
-			zerodir = os.path.join('..', DESTINATION, 'size-zero')
+			zerodir = os.path.join(basedir, 'size-zero')
 			if not os.path.exists(zerodir):
 				os.mkdir(zerodir)
 
@@ -72,9 +52,9 @@ for file in tqdm(files):
 				print(src)
 				continue
 				# break
-		except KeyError:
-			# tb.print_exc()
-			tqdm.write(f'KeyError getting timestamp from file {file} ... skipping')
+		except Exception as error:
+			print(error)
+			# time.sleep(5)
 			continue
 
 		# datetime = image.datetime
@@ -82,32 +62,20 @@ for file in tqdm(files):
 		timestr = datetime.split(" ")[1]
 		year,month,day = datestr.split(":")
 		hour,minutes,seconds = timestr.split(":")
-<<<<<<< HEAD
 		basedir = __DESTINATION__
-=======
-		
->>>>>>> 1a0289011a19c37f3bcfe4880a6653a66776ba59
 		dirname = f"{year}-{month}-{day}"
 
 		minutes = '00' if int(minutes) < 30 else '30'
 
+
 		subdirname = f"n{year[-2:]}{month}{day}_{hour}{minutes}"
-<<<<<<< HEAD
 		dstdir = os.path.join(__DESTINATION__, dirname, subdirname)
-=======
-		dstdir = os.path.join('..', DESTINATION, dirname, subdirname)
-		dstfilename = os.path.join(dstdir, basename)
-		# tqdm.write(src)
->>>>>>> 1a0289011a19c37f3bcfe4880a6653a66776ba59
 		# tqdm.write(dstdir)
-		# tqdm.write(dstfilename)
-		# sys.exit()
 
 		if not os.path.exists(dstdir):
 			os.makedirs(dstdir)
 
 		try:
-<<<<<<< HEAD
 			# tqdm.write(f"{src}->{dstdir}")
 			destinations = [
 				os.path.join(dstdir, basename),
@@ -125,14 +93,6 @@ for file in tqdm(files):
 				# tqdm.write('. ', end='')
 				# print(f'File already exists in destination. Not doing anything. {src}')
 			# sys.exit()
-=======
-			if not os.path.exists(dstfilename):
-				# tqdm.write(f"{src}->{dstdir}")
-				shutil.move(src, dstfilename)
-				# sys.exit()
-			else:
-				print(f'File {dstfilename} already exists. Not moving {src}')
->>>>>>> 1a0289011a19c37f3bcfe4880a6653a66776ba59
 		except Exception as error:
 			if "already exists" in str(error):
 				print(f"Ignoring error: {error}")
@@ -141,8 +101,13 @@ for file in tqdm(files):
 				a=1
 				# print(error)
 
+		# if c>100:
+			# break
+
+		# break
 	except Exception as err:
 		tqdm.write(file)
+		# tqdm.write(dir(image))
 		tqdm.write(err)
 		raise(err)
 
