@@ -9,5 +9,5 @@ while True:
   subprocess.call("python sync-aws.py", shell=True)
   print('Here we go again: 0) sleep 30m 1) ordenar-tobo, 2) sync-aws')
   time.sleep(30*60)
-  break
+
 
