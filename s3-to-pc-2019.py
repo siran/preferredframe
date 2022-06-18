@@ -7,7 +7,7 @@ import traceback
 import json
 
 # configuration
-destination_dir = "../tobo-local"
+destination_dir = "../tobo-ordenado"
 pictures = os.listdir(destination_dir)
 
 source_s3 = "s3://anmichel/usb/experimentos/one-way/fotos"
@@ -17,7 +17,7 @@ profile = "--profile eduweb-anrodriguez"
 downloaded_sessions_cache_filename = "downloaded_sessions.txt"
 with open(downloaded_sessions_cache_filename, "r") as fp: downloaded_sessions = json.loads(fp.read())
 
-command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2019'
+command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2022-06-1'
 print(command_top)
 directories = subprocess.check_output(command_top, shell=True).decode().split('\n')
 for _directory in tqdm(directories):
@@ -30,9 +30,9 @@ for _directory in tqdm(directories):
     #     tqdm.write(f"skipping {directory}")
     #     continue
 
-    if directory in pictures and not directory == pictures[-1]: # and directory not in ['2019-11-19','2019-11-18']:
-        tqdm.write(f"skipping {directory}")
-        continue
+    # if directory in pictures and not directory == pictures[-1]: # and directory not in ['2019-11-19','2019-11-18']:
+    #     tqdm.write(f"skipping {directory}")
+    #     continue
 
 
 

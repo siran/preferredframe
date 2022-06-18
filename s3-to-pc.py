@@ -12,24 +12,37 @@ pictures = os.listdir(destination_dir)
 source_s3 = "s3://anmichel/usb/experimentos/one-way/fotos"
 profile = "--profile eduweb-anrodriguez"
 
+DATE_RANGE_MIN = '2020-05-21'
+DATE_RANGE_MAX = '2020-06-19'
+
+IGNORE_LAST_DIRECTORY = False
+
 # load cache
 downloaded_sessions_cache_filename = "downloaded_sessions.txt"
 with open(downloaded_sessions_cache_filename, "r") as fp: downloaded_sessions = json.loads(fp.read())
 
-command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2021-04'
+command_top = f'aws {profile} s3 ls {source_s3}/ '
 print(command_top)
 directories = subprocess.check_output(command_top, shell=True).decode().split('\n')
 for _directory in tqdm(directories):
     # , desc=f"Directory {_directory.strip()[4:-1]}"
     directory = _directory.strip()[4:-1]
 
-    # if directory < '2021-03-27':
-    #     tqdm.write(f"skipping {directory}")
-    #     continue
+    if "size-zero" in directory or "tobo-ordenado" in directory:
+        continue
 
-    if directory < pictures[-1]:
+    if directory < DATE_RANGE_MIN:
         tqdm.write(f"skipping {directory}")
         continue
+
+    if directory > DATE_RANGE_MAX:
+        tqdm.write(f"skipping {directory}")
+        continue
+
+    if IGNORE_LAST_DIRECTORY:
+        if directory < pictures[-1]:
+            tqdm.write(f"skipping {directory}")
+            continue
 
 
 
@@ -42,9 +55,10 @@ for _directory in tqdm(directories):
         if _subdirectory == '':
             continue
 
-        # not transferring the last subdirectory as it might be incomplete
-        if _subdirectory == sub_directories[-1] and directory == directories[-1]:
-            break
+        if IGNORE_LAST_DIRECTORY:
+            # not transferring the last subdirectory as it might be incomplete
+            if _subdirectory == sub_directories[-1] and directory == directories[-1]:
+                break
 
         subdirectory = _subdirectory.strip()[4:-1]
 
