@@ -23,12 +23,13 @@ REM move %zipped% C:\Users\Hp_user\Documents\MEGA\tobo\
 
 REM move "C:\Users\Hp_user\Documents\tobo-zipped\*" C:\Users\Hp_user\Documents\MEGA\tobo\
 REM move "C:\Users\Hp_user\Documents\tobo-unzipped\*" C:\Users\Hp_user\Documents\MEGA\tobo\
-
+echo -------------------------------
+echo ""
 echo Esperando 30m ... (usando PING)
 echo Hora actual:
 date /T
 time /T
-ping 192.168.0.1 -n 1 -w 1800000
+ping 99.99.99.99 -n 1 -w 1800000
 
 goto retry
  
