@@ -5,7 +5,7 @@ import time
 
 
 while True:
-  subprocess.call("python ordenar-tobo.py", shell=True)
+  subprocess.call("python ordenar-tobo-usb.py", shell=True)
   subprocess.call("python sync-aws.py", shell=True)
   print('-----------------------------------------------------------')
   print('')
@@ -15,5 +15,5 @@ while True:
   try:
     for _ in range(30*60):
       time.sleep(1)
-  except Exception:
-    input('continuar'?)
+  except KeyboardInterrupt:
+    input('continuar?')
