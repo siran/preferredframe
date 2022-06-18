@@ -37,15 +37,15 @@ for _directory in tqdm(directories):
 
 
     tqdm.write(directory)
+
+    if directory in downloaded_sessions:
+        tqdm.write(f"Directory already downloaded: {directory}")
+        continue
+
+    tqdm.write(f'Downloading direcory {directory}')
     command = f'aws {profile} s3 sync s3://anmichel/usb/experimentos/one-way/fotos/{directory}/ {destination_dir}/{directory}/'
     tqdm.write(command)
 
-    session_cache_name = f"{directory}"
-    if session_cache_name in downloaded_sessions:
-        tqdm.write(f"Directory already downloaded: {session_cache_name}")
-        continue
-
-    tqdm.write(f'Downloading direcory {session_cache_name}')
     try:
 
         process = subprocess.Popen(command, shell=True,
@@ -60,14 +60,18 @@ for _directory in tqdm(directories):
         tqdm.write(output.strip())
         # Do something else
         return_code = process.poll()
+        # print('RETURN CODE', return_code)
         if return_code is not None:
-            # print('RETURN CODE', return_code)
             # Process has finished, read rest of the output
             for output in process.stdout.readlines():
                 print(output.strip())
             break
 
-    downloaded_sessions.append(session_cache_name)
+    if _directory == directories[-2]:
+        # dont save cache for last directory
+        break
+
+    downloaded_sessions.append(directory)
     # write cache
     with open(downloaded_sessions_cache_filename, "w") as fp:
         fp.write(json.dumps(sorted(downloaded_sessions), indent=4))
