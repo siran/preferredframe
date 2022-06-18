@@ -9,13 +9,18 @@ from tqdm import tqdm
 import shutil
 import sys
 import time
+import traceback
 
+print("inicio")
 __SOURCE__      =  '../tobo-local'
-__DESTINATION__ = '../tobo-local-ordenado'
+# __SOURCE__ = '../tobo-local-duplicates'
+__DESTINATION__ = '../tobo-ordenado'
 
-srcdir = os.path.join(__SOURCE__,'*', '*.jpg')
+srcdir = os.path.join(__SOURCE__, '**', '*.jpg')
 # print(srcdir)
 files = glob.glob(srcdir, recursive=True)
+print(f"{len(files)} loaded")
+# sys.exit()
 # print(len(files))
 # sys.exit()
 c=0
@@ -79,15 +84,22 @@ for file in tqdm(files):
 			]
 			for destination in destinations:
 				if not os.path.exists(destination):
-					shutil.move(src, destination)
-					tqdm.write(f'moved to {destination}')
+					# shutil.move(src, destination)
+					tqdm.write(f'gotta be moved to {destination}')
+					sys.exit()
 					break
 			else:
-				print(f'File already exists in destination. Not doing anything. {src}')
+				pass
+				# tqdm.write('. ', end='')
+				# print(f'File already exists in destination. Not doing anything. {src}')
 			# sys.exit()
 		except Exception as error:
 			if "already exists" in str(error):
 				print(f"Ignoring error: {error}")
+			else:
+				traceback.print_exc()
+				a=1
+				# print(error)
 
 		# if c>100:
 			# break
