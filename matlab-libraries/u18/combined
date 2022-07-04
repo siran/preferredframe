@@ -1,0 +1,1957 @@
+% ordering package information
+
+clear usb_sessions
+
+global package_name
+global processing_session
+
+usb_sessions = struct();
+
+% % DEFAULTS
+DAY_SESSION = false;
+Y_SCALE = false;
+IGNORE_FOLDER = {};
+IGNORE_DATETIME = {};
+MAKE_VIDEO = false;
+FORCE_REPROCESS = false;
+MIN_PEAK_DISTANCE = 60;
+SMOOTH_NUM_POINTS = 20;
+FILTER_DISK_SIZE = 10;
+REMOVE_DRIFT = false;
+SAVE_TXT_DATA = true;
+
+load_sessions
+
+% load_old_sessions
+
+% usb_sessions es la definicion de todas las sesiones
+
+%%%%%%%%%%%%%%%%%%%
+
+% Filtro de las que quiero procesar
+% En usb_session están todas las sesiones definidas
+process_sessions = [
+%     '200515-200531-con-deriva'
+%     '200601-200625-con-deriva'
+%     '20180921-1730-greaves'
+    '20180921-greaves-comparacion1'
+];
+
+for sindex=1:size(process_sessions, 1)
+    for uindex=1:length(usb_sessions)
+        if ~ strcmp(usb_sessions(uindex).name, process_sessions(sindex,:))
+            continue
+        end
+
+        processing_session = usb_sessions(uindex);
+        if ~isfield(processing_session, 'day_session')
+            processing_session.day_session = DAY_SESSION;
+        end
+        if ~isfield(processing_session, 'y_scale')
+            processing_session.y_scale = Y_SCALE;
+        end
+        if ~isfield(processing_session, 'ignore_folder')
+            processing_session.ignore_folder = IGNORE_FOLDER;
+        end        
+        if ~isfield(processing_session, 'ignore_datetime')
+            processing_session.ignore_datetime = IGNORE_DATETIME;
+        end
+        if ~isfield(processing_session, 'makeVideo')
+            processing_session.makeVideo = MAKE_VIDEO;
+        end        
+        if ~isfield(processing_session, 'force_reprocess')
+            processing_session.force_reprocess = FORCE_REPROCESS;
+        end
+        if ~isfield(processing_session, 'minpeakdistance')
+            processing_session.minpeakdistance = MIN_PEAK_DISTANCE;
+        end
+        if ~isfield(processing_session, 'smooth_num_points')
+            processing_session.smooth_num_points = SMOOTH_NUM_POINTS;
+        end
+        if ~isfield(processing_session, 'filterDiskSize')
+            processing_session.filterDiskSize = FILTER_DISK_SIZE;
+        end
+        if ~isfield(processing_session, 'remove_drift')
+            processing_session.remove_drift = REMOVE_DRIFT ;
+        end       
+        if ~isfield(processing_session, 'saveTxtData')
+            processing_session.saveTxtData = SAVE_TXT_DATA ;
+        end       
+        
+        
+        package_name = processing_session.name;
+        date_start = processing_session.date_start;
+        date_end = processing_session.date_end;
+        day_session = processing_session.day_session;
+        y_scale = processing_session.y_scale;
+
+        u18w_general
+    end
+endfunction [XX, YY] = divideInChunks(x, y, rotation0_locs, numpoints, orientacion)
+% divideInChunks(Y, divisions, numpoints)
+% returns a matrix `chunks` dividing vector Y by its indices `divisions` 
+% and does a numpoints interporlation
+
+
+XX = [];
+YY = [];
+
+i = 0;
+rotacionini=2;
+% if ~exist('rotacionini')
+%     rotacionini = 6;
+% end
+rotacionfin = length(rotation0_locs );
+
+numrotaciones = rotacionfin - rotacionini;
+
+% se separa cada rotacion
+% luego se interpola cada rotacion con 360 puntos
+for k=rotacionini:rotacionfin
+    i = i+1;
+%     rango = rotation0_locs(k-1):1/24/60*3:rotation0_locs(k);
+    
+    inicio = rotation0_locs(k-1);
+    fin = rotation0_locs(k);
+%     inicioFecha = 
+    pasos = (fin-inicio)/numpoints;
+%     pasosFechas=
+%     XX(i,:) = inicio:pasos:fin-pasos;
+%     fechas(i,:) = inicio:pasos:fin-pasos
+
+%     plot( ...
+%          xts(xts>tm(rotation0_locs(k-1)) & xts<tm(rotation0_locs(k))), ...
+%         y(xts>tm(rotation0_locs(k-1)) & xts<tm(rotation0_locs(k))), ...
+%         'color', colors{mod(k,5)+1} ...
+%     );
+
+%     try
+        xx = inicio:pasos:fin-pasos;
+        xlocs = x>=rotation0_locs(k-1) & x<rotation0_locs(k);
+        if isnan(y(xlocs))
+            break
+        end
+        YY(i,:) = pchip( ...
+            x(xlocs), ...
+            y(xlocs), ...
+            xx ...
+        );
+        XX(i,:) = pchip( ...
+            x(xlocs), ...
+            x(xlocs), ...
+            xx ...
+        );
+        legends{i} = int2str(k);
+%     catch
+%         nada=1;
+%     end
+end
+
+if ~isempty(YY)
+    YY = hampel(YY);
+end
+
+fin=1;
+% chunks = [XX YY];% Determine the maxima of an interference pattern
+% From all pictures in a folder
+
+warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
+wspath = 'D:\Users\an\experimento-usb-interferometro\u18_workspaces\';
+
+mkdir([path_images '\ignored_images'])
+
+minpeakdistance = 30;
+if isfield(processing_session, 'minpeakdistance') && ~isempty(processing_session.minpeakdistance)
+    minpeakdistance = processing_session.minpeakdistance;
+end
+
+smooth_num_points = 20;
+if isfield(processing_session, 'minpeakdistance') && ~isempty(processing_session.minpeakdistance)
+    smooth_num_points = processing_session.smooth_num_points;
+end
+
+filterDiskSize = 5;
+if isfield(processing_session, 'filterDiskSize') && ~isempty(processing_session.filterDiskSize)
+    filterDiskSize = processing_session.filterDiskSize;
+end
+
+if isfield(processing_session, 'rotating_session') && ~isempty(processing_session.filterDiskSize)
+    rotating_session = processing_session.rotating_session;
+end
+
+fprintf('Procesando directorio: %s \n\n', session );
+fprintf('Scanning goodness of files...\n')
+
+% scan goodness of files
+restart = false;
+
+files_images_raw = dir(strcat(path_images,'*.jpg'));
+info1 = imfinfo([path_images files_images_raw(1).name]);
+info2 = imfinfo([path_images files_images_raw(2).name]);
+info3 = imfinfo([path_images files_images_raw(3).name]);
+
+% sometimes the first image is rotated 90degress which causes the program
+% to eror out
+if info1.Width ~=info2.Width && info1.Width ~=info3.Width
+    copyfile([path_images files_images_raw(1).name], [path_images 'ignored_images'])
+end
+
+
+if (~exist('files_images', 'var'))   
+    % leo archivos
+    files_images_raw = dir(strcat(path_images,'*.jpg'));
+    maxfiles = length(files_images_raw);
+    
+    if maxfiles < 100
+        fprintf('Muy pocos archivos: %d, videoid: %s\n', maxfiles, videoId)
+        return
+    end
+    
+    stepFrames=1;
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %% ordeno por fecha
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    image_counter = 0;
+    for t=1:size(files_images_raw)
+        full_name_image = [path_images files_images_raw(t).name];
+
+        name_image = files_images_raw(t).name;
+        if isequal(exist([path_images '\ignored_images\' name_image ],'file'),2)
+            fprintf('Ignoring file %s\n', name_image)
+            continue
+        end
+        
+
+        
+        image_counter = image_counter+1;
+        try
+            info = imfinfo([path_images files_images_raw(t).name]);
+            date = info.DigitalCamera.DateTimeOriginal;
+            files_images(image_counter) = files_images_raw(t);
+            files_images(image_counter).datenum = datenum(date,'yyyy:mm:dd HH:MM:SS');
+            x_timestamp(image_counter) = files_images(image_counter).datenum;
+            orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
+        catch
+            fprintf('Invalid file %s, deleting... \n', full_name_image)
+            delete(full_name_image)
+            restart = true
+            continue
+        end
+        
+    end
+    orientacion_orig = orientacion;
+    [tmp, ind]=sort([files_images.datenum]);
+    files_images = files_images(ind);
+end
+
+maxfile = length(files_images);
+
+% restarting if files were deleted
+if restart
+    clear all -except session processing_session date_start date_end
+    fprintf('Restarting')
+    u18w_general
+    return
+end
+
+p           = nan(length(files_images),20);
+%     orientacion = nan(length(1:stepFrames:maxfiles), 1 );
+%     x_timestamp = nan(length(1:stepFrames:maxfiles), 1 );
+
+% [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),                                           'MinPeakHeight', 0.95);
+% [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
+[rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp);
+
+num_rotations = length(rotation0_pks);
+
+if num_rotations < 5
+    if exist('rotating_session', 'var') && ~isempty(rotating_session) || ~exist('rotating_session', 'var')
+        fprintf('Not enough rotations %s\n', videoId)
+        ignore_folder = true;
+        return
+    end
+end
+ 
+% orientacion = zeros(maxfiles(1),1);
+% x_timestamp = zeros(maxfiles(1),1);
+
+t=0;
+tini=tic;
+fila=0;
+warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Determine angle of rotation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clear sum_image max_sum_image num_im_peaks rotationAngle
+
+name_image = files_images(1).name;
+full_name_image = strcat(path_images, name_image);
+[imagen, map]= imread(full_name_image);
+imagen = rgb2gray(imagen);
+imagen = imadjust(imagen);
+imagen = imfilter(imagen,fspecial('disk', filterDiskSize));
+
+% 1. sum the image for every angle
+angulos = 0:95;
+a=0;
+indice =0;
+for angulo=angulos
+    a = a + 1;
+    rotated_image = imrotate(imagen, angulo);
+    perfil = smooth(double(sum(rotated_image)), smooth_num_points);
+    [peaks,locs] = findpeaks(perfil, 'MinPeakDistance',minpeakdistance,'MinPeakProminence',1e3); 
+
+    if length(peaks) > 3
+        num_peaks(a) = length(peaks);
+        max_sum_image(a) = max(sum(perfil));
+        
+%         %%% visualize peaks and rotation
+%         subplot(1,3,1)
+%         hold off
+%         plot(perfil)
+%         hold on
+%         plot(locs, peaks,'o')
+%         title(int2str(angulo))
+%         subplot(1,3,2)
+%         hold off
+%         plot(hampel(max_sum_image),'o')
+%         subplot(1,3,3)
+%         hold off
+%         imshow(rotated_image)
+%         drawnow()
+%         title(['Rotation angle: ' int2str(angulo)])
+%         hold off
+%         set(gcf,'units','normalized','outerposition',[0 0 1 1]);        
+    end
+
+
+end
+subplot(1,1,1)
+
+if ~exist('num_peaks')
+    fprintf('Not enough peaks found. Returning.\n')
+    ignore_folder = true;
+    return
+end
+
+[Y,I] = sort(num_peaks, 2, 'descend');
+indices_max_count_peaks = find(num_peaks == Y(1)); %num_peaks(num_peaks==Y(1));
+
+if length(indices_max_count_peaks) > 1
+    max_sum_image = max_sum_image(indices_max_count_peaks);
+    [Yx, Ix] = max(max_sum_image);  
+    I = indices_max_count_peaks(Ix);
+end
+
+rotationAngle = angulos(I(1));
+    
+datenum_ini = files_images(1).datenum;
+x_start = datenum_ini - mod(datenum_ini, 1/48);
+x_end = x_start + 1/48;
+
+
+if processing_session.makeVideo
+    video_path_output = 'D:\Users\an\experimento-usb-interferometro\videos\';
+    outputVideo = VideoWriter(fullfile(video_path_output, videoId));
+    outputVideo.FrameRate = 10;
+    open(outputVideo);
+end
+
+for i=1:length(files_images)
+    fila = fila +1;
+
+    name_image = files_images(i).name;
+    if strfind(name_image, '\')
+        full_name_image = name_image;
+    else
+        full_name_image = strcat(path_images, name_image);
+    end   
+    
+    if ~exist('lastI', 'var') || (mod((i - lastI),100)==0)
+        elapsed = toc(tini)/60;
+        total = (maxfiles(1)*elapsed/i);
+        faltante = (total-elapsed);
+        if ((total-elapsed) < 1)
+            faltante = (total-elapsed)*60;
+        end
+        fprintf('%d/%d - %6.1f - total est.: %4.2f min, transcurridos: %4.2f min, faltante: %4.2f min \n', i, maxfiles(1), round(i/maxfiles(1)*10000)/100, total, elapsed, faltante);
+        lastI = i;
+    end    
+    if (i==332)
+            a=1;
+    end
+ 
+
+%     if ~isfield(table2struct(conf), 'minY')
+%         minY = 1;
+%     end
+%     if ~isfield(table2struct(conf),'maxY')
+%         maxY = size(imagen,1);        
+%     end   
+
+%     imagen = imagen(minY:maxY, :);
+    
+%     if isfield(table2struct(conf), 'rotationAngle')
+%         rotationAngle = conf.rotationAngle;
+%     else
+%        if exist('rotationStop', 'var') && rotationStop 
+%            angle = 0;
+%            imshow(imrotate(imagen, angle))
+%            while true
+%                answer = input('input a rotation angle and press Enter (rotationAngle):');
+%                  answer =[];
+%                if isempty(answer)               
+%                    break
+%                end
+%                angle = answer;
+%                imshow(imrotate(imagen, angle))
+%            end
+%            rotationAngle = angle;
+% %         else
+%             
+% %             angle=0;
+% %             rotationAngle = angle;
+%        end
+%         
+%        conf.rotationAngle = rotationAngle;
+%        writetable(conf, fconf);          
+%     end
+
+    [imagen map]= imread(full_name_image);
+    imagen = rgb2gray(imagen);
+%     imagen = imadjust(imagen);
+    imagen = imrotate(imagen, rotationAngle);     
+    imagen = imfilter(imagen,fspecial('disk', filterDiskSize));
+    
+    perfil_intensidad = sum(imagen');
+    [Y,I] = max(perfil_intensidad);
+    if ~exist('max_intensity_row')
+        max_intensity_row = I;
+    end
+    perfil = imagen(I,:);
+    perfil = double(perfil);
+       
+    perfil = smooth(perfil, smooth_num_points);
+    
+    [peaks,locs] = findpeaks(perfil, 'MinPeakDistance', minpeakdistance);
+    
+    textPosition = 'bottom';
+    if ~exist('figureCreated', 'var') || figureCreated==false
+        
+        xts(1) = x_timestamp(1);
+        imshow(imread(full_name_image))
+        axis on
+        xlabel('Width of original image (px)')
+        ylabel('Height of original image (px)')
+        title('First image of session (original)')
+        textPosition = 'bottom';
+        usb2018_saveFigureToFile('_original_image', 'numFig', false, ...
+            'useXts', false, 'textPosition', textPosition, 'timeRange', [x_start x_end])
+        
+        imshow(imagen)
+        
+        axis on
+        hold on
+        minsizeimagen = min(size(imagen));
+        plot(-3/5*minsizeimagen*perfil/max(max(perfil))+minsizeimagen, 'color','r', 'linewidth',2)
+        xlabel('Width of rotated image (px)')
+        ylabel('Height of rotated image (px)')
+        title('First image of session after rotation, B&W, adjust and smoothing')
+        textPosition = 'bottom';
+        usb2018_saveFigureToFile('_with-intensity_profiles', 'numFig', false, ...
+            'useXts', false, 'textPosition', textPosition, 'timeRange', [x_start x_end])
+        
+        figureCreated = true;
+    end
+    
+%     try
+
+        
+        if length(peaks) >= 3
+            try
+                perfiles(fila,:,:) = perfil;        
+            catch
+                perfiles(fila,:,:) = nan(1, size(perfiles(fila-1,:,:),2));
+                p(fila,1:length(locs)) = nan(1,length(locs)); % locs;          
+                continue
+            end
+            p(fila,1:length(locs)) = locs;        
+        elseif size(perfiles,2) ~= length(perfil)
+            perfiles(fila,:,:) = nan(1, size(perfiles(fila-1,:,:),2));
+            p(fila,1:length(locs)) = nan(1,length(locs)); % locs;          
+        else
+            perfiles(fila,:,:) = perfil;        
+            p(fila,1:length(locs)) = nan(1:length(locs)); % locs;          
+%             continue
+    %         perfiles(fila,:,:) = perfiles(fila-1,:,:);
+    %         p(fila, :) = p(fila-1, :);                
+    %         continue;
+        end
+        if processing_session.makeVideo
+            if ~exist('maximized', 'var') || ~maximized
+                figure
+                hold on
+                set(gcf,'units','normalized','outerposition',[0 0 1 1]);
+                maximized=true;
+                ax = gca;
+                height_profile = ax.YLim(2);
+                perfil_xlim = [0 size(imagen,2)]
+%                 [rotation90_pks,rotation90_locs]=findpeaks(sin(orientacion/360*2*pi),'minpeakdistance',30, 'MinPeakHeight', 0.95);
+%                 [rotation0_pks,rotation0_locs]=findpeaks(sin(orientacion/360*2*pi + pi/2),'minpeakdistance',30, 'MinPeakHeight', 0.95);
+            end
+            subplot(2,2,2)
+               
+            plot(x_timestamp',p, '.')
+            title({'Position of Interference Maxima vs Time (raw) '},'FontSize', 16);
+            
+            ax = gca;
+            draw_rotations(rotation0_locs, ax.YLim, ax)
+            
+            grid on
+%             for b=1:size(p,2);
+%                 line([1 size(p,1)],[p(1,1) p(1,end)]);
+%             end
+            config_plot
+           
+            subplot(2,2,4)
+            plot(perfil)
+            hold on
+            plot(locs,peaks,'ro')
+            xlim(perfil_xlim)
+            hold off
+            
+            subplot(2,2,[1;3])
+            
+            imshow(imagen)
+%             axis normal
+            
+            title({'Photo of interference pattern at timestamp'},'FontSize', 16);
+            text(20, 55,[datestr(x_timestamp(i), 'yyyy-mm-dd HH:MM')], 'Color', 'red', 'FontSize',16)
+            text(20, 145,['Rot. angle:' num2str(orientacion(i)) '°'], 'Color', 'red', 'FontSize',16)
+            hold on
+%             minsizeimagen = min(size(imagen));
+%             plot(-3/5*minsizeimagen*perfil/max(max(perfil))+minsizeimagen, 'color','r', 'linewidth',2)
+            plot(locs, max_intensity_row, 'ro')
+%             legend('Interference maxima')
+%             ax=gca;
+
+            drawnow()
+            hold off
+            frame = getframe(gcf); 
+            writeVideo(outputVideo,frame.cdata)        
+        end        
+%     catch
+%         a=1;
+%     end
+%     for k=2+distanciaEntrePicos:size(perfil)-1-distanciaEntrePicos
+%         if perfil(k)>=perfil(k-1) && perfil(k)>=perfil(k+1)
+%             if (perfil(k) >= max(perfil(k-distanciaEntrePicos:k+distanciaEntrePicos)) ) %&& k-locs(cuentaPicos)>distanciaEntrePicos
+%                 cuentaPicos = cuentaPicos + 1;
+%                 locs(cuentaPicos) = k;
+%                 peaks(cuentaPicos) = perfil(k);
+%             end
+% %             fprintf('%4d ', locs(size(locs, 2)));
+%         end
+%     end
+%      fprintf('\n');
+%     if exist('animar') & animar == true
+%         plot(perfil)
+%         hold on
+%         plot(locs,peaks,'o')    
+%         hold off
+%         drawnow;
+%     end
+end
+
+if processing_session.makeVideo
+    close(outputVideo)
+    subplot(1,1,1)
+    hold off
+end
+
+% if exist('punto_inicial')
+%     p = p(initial_point:end, :);
+%     x_timestamp = x_timestamp(initial_point:end);
+% end
+
+p_orig = p;
+x_timestamp_orig = x_timestamp;
+
+xts = x_timestamp';
+
+save([wspath videoId], '-regexp', '^(?!ses)...')
+global processing_session
+
+clear saveFigureToFile
+clear functions
+
+clear ratio_fringe_separation
+if isfield(processing_session, 'ratio_fringe_separation') && ~isempty(processing_session.ratio_fringe_separation)
+    ratio_fringe_separation = processing_session.ratio_fringe_separation;
+end
+% processing_session
+% if ~isfield(processing_session, 'saveTxtData') || (isfield(processing_session, 'saveTxtData') && isempty(processing_session.saveTxtData))
+    saveTxtData = processing_session.saveTxtData;
+% end
+
+close(gcf)
+
+xts = x_timestamp';
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% setting plot x limits by substracting the fractional part over :00 or :30 min
+x_start = xts(1) - mod(xts(1), 1/48);
+x_end = x_start + 1/48;
+
+% xlim([x_start x_end])
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% fprintf('Data: %s - %s \n', datestr(x_start), datestr(x_end))
+
+
+fconf = [path_images videoId '.csv'];
+if exist(fconf, 'file')
+    conf = readtable(fconf);   
+    fields = fieldnames(conf);
+    for f=1:length(fields)
+        if ~strcmp(fields{f},'Properties')
+            eval([fields{f} '=conf.(fields{f});'])
+        end
+    end
+end
+rotating_session = 1;
+    
+% orientacion = mod(orientacion - 12.66, 360);
+% [rotation90_pks,rotation90_locs]=findpeaks(sin(orientacion/360*2*pi)       ,x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
+if length(orientacion) ~= length(x_timestamp)
+    return
+end
+[rotation0_pks,rotation0_locs]=  findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
+
+fprintf('%d picos de rotacion encontrados. \n', num_rotations);
+numrotaciones = length(rotation0_pks);
+
+% tm=xts;
+
+if min(orientacion) < 150 && max(orientacion) > 250
+    rotationsFound = true;
+else
+    rotationsFound = false;
+    fprintf('\nWARNING: no rotations detected. Some plots will not be made.\n\n')
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Busqueda de rotaciones
+if rotationsFound && (~exist('graficoAzimuth') || graficoAzimuth == true)
+    if ~exist('plot_rotations', 'var') || plot_rotations
+%         figure
+    %     oh = hampel(orientacion);
+        oh = orientacion;
+        plot(xts, sin(oh*pi/180), 'b.')
+        ax = gca;
+        ax.XTickLabelRotation = 90;
+    %     ylim([-2 2])
+    %     hold on
+    %     plot(rotation90_locs, rotation90_pks, 'o')
+    %     line([rotation90_locs rotation90_locs], ylim,'color', 'r')
+        title({'Compass angle', [num2str(numrotaciones) ' rotations found']})
+        xlabel('Date time (dd/mm HH:MM)')
+        ylabel('sin(Compass angle * pi / 180)-9 (rad)')
+        legend('Angle of rotation')
+
+        set(gca,'XMinorTick','on')
+        grid on
+
+        datetick('x', 'dd/mm HH:MM')
+        xlabel('Date-time (dd/mm HH:MM)')
+        ax = gca;
+
+        hold on
+
+        config_plot
+        ylim([-5 5])    
+        usb2018_saveFigureToFile('rotations')
+
+    %     set(gca,'XMinorTick','on')
+    %     grid on
+    %     datetick('x', 'HH:MM')
+    %     xlabel('Date-time (dd/mm HH:MM)')
+    %     ax = gca;
+    %     ax.XTickLabelRotation = 90;
+    %     hold on
+    %     ylim([-5 5])   
+    %     xlim([xts(1) xts(min(500, length(xts)))])
+    %     usb2018_saveFigureToFile('rotations-zoomin')
+    end
+end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% clear timeAltitude
+readdatetimealt
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Grafico inicial
+
+p = p_orig;
+
+% hold off
+% figure
+
+
+
+startDate = x_timestamp(1);
+endDate = x_timestamp(end); %datenum(files_images(size(p,1)).date);
+
+% yyaxis left
+% if length(xts) ~= length(p)
+%     stop=1;
+% end
+plot(xts, p, '.')
+
+title({'Displacement of Interference Maxima vs Time (raw)', ['from ' datestr(x_start) ' to ' datestr(x_end)]},'FontSize', 16);
+ylabel('Displacement of Maxima (px)');
+
+% set(gca,'XMinorTick','on')
+% grid on
+% datetick('x', 'dd/mm HH:MM')
+% xlabel('Date-time (dd/mm HH:MM)')
+% ax = gca;
+% ax.XTickLabelRotation = 90;
+% hold on
+
+% continuar = input(['Do you want to continue with other plot? 1/0: ']);
+% if continuar == 0
+%     return
+% end
+
+% draw_rotations(xts(rotation0_locs), ylim, ax)
+
+% for r=1:length(rotation0_locs)
+%     line([xts(rotation0_locs(r)) xts(rotation0_locs(r))], [ax.YLim(1) ax.YLim(2)], ...
+%         'Marker','.','LineStyle','--', 'Color', [1 0 0])
+%     line([xts(rotation0_locs(r)) xts(rotation0_locs(r))], [ax.YLim(1) ax.YLim(2)], ...
+%         'Marker','.','LineStyle','--', 'Color', [1 0 0])
+% end
+% legend('Maxima displacement - raw', 'Rotation indicator')
+if exist('day_session') && day_session
+    nothing=0;
+else
+%     if exist('session_duration_min', 'var')
+%        
+%         % substracting the fractional part over :00 or :30 min
+%         x_start = xts(1) - mod(xts(1), 1/48);
+%         x_end = x_start + 1/48;
+%         
+%         xlim([x_start x_end])
+%     end
+end
+ylimites = ylim();
+ylimdiff = diff(ylimites);
+if exist('day_session') && day_session
+    hours_limits = [0 2 4 6 8 12 14 16 18 20 22 24];
+    if y_scale
+        yyaxis left
+        ymin = max(ylim())/3;
+        ymax = ymin*2;
+%         ylim([ymin ymax])        
+        ylim([600 800])        
+    end
+    for hl=1:length(hours_limits)-1        
+        x_start = floor(xts(1)) + hours_limits(hl)/24;
+        
+%         x_end = floor(xts(1)) + hours_limits(hl+1)/24
+        x_end = x_start + 1/12;
+        if ~ length(xts(xts >= x_start & xts < x_end));
+            continue
+        end
+        
+        xlim([x_start x_end])
+        set(gca,'XTick', [x_start:1/48:x_end])
+        datetick('x', 'dd/mm HH:MM', 'keepticks')
+        
+        fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
+        title(['Displacement of Interference Maxima: from ' ...
+            datestr(x_start) ' to ' ...
+            datestr(x_end)],'FontSize', 16);
+        plotheightstar
+        closeFigure = hl==(length(hours_limits)-1);
+        usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
+            'closeFigure', closeFigure)
+    end
+            
+else
+    ax = gca;
+    draw_rotations(rotation0_locs, ylim, ax)
+    plotheightstar
+%     xlim([x_start x_end])
+    config_plot
+%     ylim([0 1600])
+    usb2018_saveFigureToFile('maxima-displacement-raw')
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Separar lineas
+
+if ~exist('ajustarDefault')
+    ajustar = input('desea unificar en una linea la data? [s]/n: ', 's');
+else
+    ajustar = ajustarDefault;
+end
+
+clear p_adjusted_orig
+if ~exist('p_adjusted_orig', 'var') && (exist('ajustar', 'var') && ( ajustar == true || strcmp(ajustar, 's')))
+%     if ~exist('backInTime')
+%         backInTime = 1;
+%     end
+%     if ~exist('maxHeightDifference')
+%         maxHeightDifference = 80;
+%         if ~isfield(table2struct(conf), 'maxHeightDifference')
+%             conf.maxHeightDifference = maxHeightDifference ;
+%             writetable(conf, fconf);          
+%         end
+%     end    
+%     maxHeightDifference = 25;
+%     backInTime = 1;
+    if exist('ratio_fringe_separation', 'var')
+        p_adjusted_orig = usb2018_adjustdata(p_orig, 'ratio_fringe_separation', ratio_fringe_separation);
+    else 
+        p_adjusted_orig = usb2018_adjustdata(p_orig);
+    end
+    p_adjusted = p_adjusted_orig;
+    p = p_adjusted;
+%     plot(p)
+    padj = p_adjusted;
+elseif exist('p_adjusted_orig', 'var')
+    p_adjusted = p_adjusted_orig;
+    p = p_adjusted;
+    padj = p_adjusted;        
+else
+    p = p_orig;
+    p_adjusted = p_orig;
+    padj = p_adjusted;
+end    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Grafico inicial (lineas separadas)
+
+% figure
+% startDate = x_timestamp(1);
+% endDate = x_timestamp(end); %datenum(files_images(size(p,1)).date);
+
+% yyaxis left
+if length(xts) ~= length(p)
+    stop=1;
+end
+plot(xts, p, '.')
+
+title({'Displacement of Interference Maxima vs Time', ['from ' datestr(x_start) ' to ' datestr(x_end)]},'FontSize', 16);
+ylabel('Displacement of Maxima (px)');
+
+% set(gca,'XMinorTick','on')
+% grid on
+% datetick('x', 'dd/mm HH:MM')
+% xlabel('Date-time (dd/mm HH:MM)')
+% ax = gca;
+% ax.XTickLabelRotation = 90;
+config_plot
+
+hold on
+
+% continuar = input(['Do you want to continue with other plot? 1/0: ']);
+% if continuar == 0
+%     return
+% end
+
+if exist('day_session') && day_session
+    nothing=0;
+else
+%     if exist('session_duration_min', 'var')
+%        
+%         % substracting the fractional part over :00 or :30 min
+%         x_start = xts(1) - mod(xts(1), 1/48);
+%         x_end = x_start + 1/48;
+%         
+%         xlim([x_start x_end])
+%     end
+end
+% ylimites = ylim();
+% ylimdiff = diff(ylimites);
+if exist('day_session') && day_session
+    hours_limits = [0 2 4 6 8 12 14 16 18 20 22 24];
+    if y_scale
+        yyaxis left
+        ymin = max(ylim())/3;
+        ymax = ymin*2;
+%         ylim([ymin ymax])        
+        ylim([600 800])        
+    end
+    for hl=1:length(hours_limits)-1
+
+        
+%         x_start = floor(xts(1)) + hours_limits(hl)/24
+%         
+% %         x_end = floor(xts(1)) + hours_limits(hl+1)/24
+%         x_end = x_start + 1/12;
+%         if ~ length(xts(xts >= x_start & xts < x_end))
+%             continue
+%         end
+        
+        xlim([x_start x_end])
+        set(gca,'XTick', [x_start:1/48:x_end])
+        datetick('x', 'dd/mm HH:MM', 'keepticks')
+        
+        fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
+        title({ ...
+            'Displacement of Interference Maxima',  ...
+            ['from ' datestr(x_start) ...
+               'to ' datestr(x_end)]},'FontSize', 16);
+        plotheightstar
+        closeFigure = hl==(length(hours_limits)-1);
+        usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
+            'closeFigure', closeFigure)
+    end
+            
+else
+    plotheightstar
+    draw_rotations(rotation0_locs, ylim, ax)
+    config_plot
+    usb2018_saveFigureToFile('maxima-displacement')
+end
+
+if ~exist('ajustar', 'var') || ~ajustar
+    fprintf('Curves not being adjusted. End of plotting.')
+    close(gcf)
+    return
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Quitar outliers
+[p_adjusted_hampel, removed_points] = hampel(p_adjusted,3,1);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Escoger linea
+    
+% temporal, para la data de septiembre 2019
+% clear lineaPreferida lineaPreferidaAdjunta
+% lineaPreferida = 8
+% lineaPreferidaAdjunta = 9
+    
+if ~exist('lineaPreferida') || (exist('force_choose_line', 'var') && force_choose_line)
+    % find column with more values
+    
+    % calculating length of lines
+    length_lines = length(p_adjusted_hampel) - sum(removed_points);
+    
+    % sort lines by number of points descending
+    [sorted_lines, sorted_lines_indices] = sort(length_lines, 'descend');
+    
+    % six more populates columns
+%     sorted_long_lines_indices = sort(sorted_lines_indices(1:6));
+
+    found_lines = false;
+    for i=1:7
+        for j=i+1:7
+            if abs(sorted_lines_indices(i) - sorted_lines_indices(j)) == 1
+                lineaPreferida = sorted_lines_indices(i);
+                lineaPreferidaAdjunta = sorted_lines_indices(j);
+                adjacency_sign = lineaPreferida-lineaPreferidaAdjunta;
+                found_lines = true;
+                break
+            end
+        end
+        if found_lines
+            break
+        end
+    end
+    if ~found_lines
+        fprintf('Did not find adjacent curves. Stop.')
+        a=1;
+    end
+    
+%     a=1
+    
+% % % % % % %     % calculate adjacency of the long lines
+% % % % % % %     diff_column_indices = diff(sorted_lines_indices);
+% % % % % % %     
+% % % % % % %     % sort by adjacency
+% % % % % % %     % [sorted_diff_column_indices, indices_diff_column_indices] = sort(diff_column_indices);
+% % % % % % %     
+% % % % % % %     % pick adjacency 1 or -1
+% % % % % % %     adjacent_long_lines_indices = (diff_column_indices==-1 | diff_column_indices==1);
+% % % % % % %     
+% % % % % % %     % find first non-zero value
+% % % % % % %     adjacent_long_line_index = find(adjacent_long_lines_indices(1:6)==1);
+% % % % % % %     adjacency_sign = diff_column_indices(adjacent_long_line_index);
+% % % % % % %     
+% % % % % % %     if isempty(adjacency_sign)
+% % % % % % %         fprintf('Could not find adjacent lines.')
+% % % % % % %         return
+% % % % % % %     end
+% % % % % % %     
+% % % % % % %     
+% % % % % % %     
+% % % % % % %     len_adjacent_lines = length(adjacent_long_line_index);
+% % % % % % % %     if len_adjacent_lines  >= 2 
+% % % % % % % %         center_line_index = round(len_adjacent_lines/2);
+% % % % % % % %         lineaPreferida = sorted_long_lines_indices(center_line_index);
+% % % % % % % %         lineaPreferidaAdjunta = lineaPreferida + adjacency_sign(center_line_index);
+% % % % % % % %     else
+% % % % % % %         lineaPreferida = sorted_lines_indices(adjacent_long_line_index(1));
+% % % % % % %         lineaPreferidaAdjunta = lineaPreferida + adjacency_sign(1);
+%     end
+    
+    
+%     figure
+%     plot(xts, p_adjusted_hampel)
+%     hold on
+%     plot(xts, p_adjusted_hampel(:, lineaPreferida),'gx')
+%     
+%     plot(xts, p_adjusted_hampel(:, lineaPreferidaAdjunta),'rx')
+%     STOP=1;
+%     choose_lines = input('want to choose lines? 1/0')
+%     choose_lines =0;
+    
+% %     d = diff(posicionCuenta);
+% %     elegibles = (abs(d)==1);
+% %     indices = find(elegibles == 1 | elegibles == -1);
+% %     lineaPreferida = posicionCuenta(indices(1));
+% %     if d(indices(1)) == 1
+% %         lineaPreferidaAdjunta = lineaPreferida + 1
+% %     elseif d(indices(1)) == -1
+% %         lineaPreferidaAdjunta = lineaPreferida - 1
+% %     else
+% %         error=1/0
+% %     end
+% % 
+% % 
+% %     if elegibles(indices(2)) && elegibles(indices(3))
+% %         lineaPreferida = posicionCuenta(indices(1))
+% %         lineaPreferidaAdjunta = lineaPreferida + 1 %posicionCuenta(indices(3))
+% %     elseif elegibles(indice(1)) && elegibles(indices(2))
+% %         lineaPreferida = posicionCuenta(indices(1))
+% %         lineaPreferidaAdjunta = posicionCuenta(indices(2))        
+% %     end
+%     
+% %     lineaPreferida = filasRecomendadas(1+1)
+% %     lineaPreferidaAdjunta = filasRecomendadas(2+1)
+%     if choose_lines == 1
+%         lineaPreferida = input(['Especifique el número de curva que desea usar[' int2str(filasRecomendadas(1)) ']: ']);
+%         lineaPreferidaAdjunta = input(['Especifique el número de curva ADJUNTA que desea usar[' int2str(filasRecomendadas(1)) ']: ']);
+%     end
+    
+    conf.lineaPreferida = lineaPreferida;
+    conf.lineaPreferidaAdjunta = lineaPreferidaAdjunta;
+    if strcmp(class(conf), 'table')
+        writetable(conf, fconf);   
+    else
+        writetable(struct2table(conf), fconf);   
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% preferred lines
+p_adjusted_hampel_pref = p_adjusted_hampel(:,lineaPreferida);
+p_adjusted_pref = p_adjusted(:,lineaPreferida);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% temporal, para la data de septiembre 2019
+% clear lineaPreferida lineaPreferidaAdjunta
+% lineaPreferida = 8
+% lineaPreferidaAdjunta = 9
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Separacion franjas
+
+plot(...
+	xts, ...
+    p_adjusted_hampel(:, lineaPreferida), ...    
+    'gX', ...    
+    xts, ...
+    p_adjusted_hampel(:, lineaPreferidaAdjunta), ...
+    'rX' ...
+)
+hold on
+plot(xts, p_adjusted_hampel, '.', 'Color', [150 150 150]/255)
+
+title({ ...
+    ['Interference Maxima displacement with two highlighted fringes, ' ...
+      '#' int2str(lineaPreferida) ' and #' int2str(lineaPreferidaAdjunta)], ...
+    ['(for calculation of separation between fringes used in normalization)'], ...
+    [ 'from ' datestr(x_start) ' to ' datestr(x_end)]})
+ylabel('Fringe displacement (px)')
+  
+% xlabel('Date time (dd/mm HH:MM)')
+% datetick('x','dd/mm HH:MM')
+% ax = gca;
+% ax.XTickLabelRotation = 90;  
+% grid(gca,'minor')
+% set(gca,'XMinorTick','on')  
+
+config_plot
+if exist('day_session') && day_session
+    xlim([floor(xts(1)) floor(xts(1))+1])
+end
+draw_rotations(rotation0_locs, ylim, ax)
+usb2018_saveFigureToFile('fringes_for_difference')
+
+% if exist('puntosSeparacionFranjas')
+% limiteSeparacionFranjas = min( ...
+%     [ 500, ...
+%     size(p_adjusted_hampel(:, lineaPreferida       ), 1), ...
+%     size(p_adjusted_hampel(:, lineaPreferidaAdjunta), 1) ...
+%     ] ...
+% );
+limiteSeparacionFranjas = length(p_adjusted_hampel);
+% puntosSeparacionFranjas, size(p_adjusted_hampel,1);
+% else
+%     limiteSeparacionFranjas = size(p_adjusted_hampel,1);
+% end
+
+try
+    separacionFranjas = abs(nanmean(...
+        hampel(p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferida) - p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferidaAdjunta)) ...
+    ));
+catch
+    fprintf('Error en separacion franjas. Abortando operacion.')
+    1/0
+    return
+end
+
+
+errorSeparacionFranjas = nanstd(hampel( ...
+        p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferida) - p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferidaAdjunta) ...
+    )) / ...
+    sqrt(length(p_adjusted_hampel(:,lineaPreferida)));
+
+% figure
+restaLineas = p_adjusted_hampel(:,lineaPreferida) - p_adjusted_hampel(:,lineaPreferidaAdjunta);
+restaLineas = hampel(restaLineas);
+plot(xts, restaLineas,'gX')
+hold on
+plot(xts, smooth(restaLineas,20),'x')
+title({'Separation between fringes ', ...
+    ['d=' num2str(separacionFranjas) '+- ' num2str(errorSeparacionFranjas) 'px'], ...
+    'standard error given by stddev(points)/sqrt(#points)'} ...
+)
+% if exist('limiteSeparacionFranjas')
+%     legend(['Franja limitada a ' num2str(limiteSeparacionFranjas) 'puntos'])
+% end
+ylabel('Difference of displacement between two adjacent fringes (px)')
+if isnan(restaLineas)
+    return
+end
+ylim([min(restaLineas)-5 max(restaLineas)+5])
+
+
+% xlabel('Date time (dd/mm HH:MM)')
+% datetick('x','dd/mm HH:MM')
+% 
+% ax.XTickLabelRotation = 90;  
+% grid(gca,'minor')
+% set(gca,'XMinorTick','on')  
+% if exist('day_session') && day_session
+%     xlim([floor(xts(1)) floor(xts(1))+1])
+% else
+% %     xlim([xts(1) xts(end)])
+%     xlim([x_start x_end])
+% end
+ax = gca;
+draw_rotations(rotation0_locs, ylim, ax)
+config_plot
+usb2018_saveFigureToFile('separacion-franjas')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if ~exist('rotating_session', 'var') || ~rotating_session
+    fprintf('\nWARNING: This is not a rotating session.\n\n')
+
+    writeSummary( ...
+         'sessionId', [videoId '-no-rotation']...
+        ,'XX', xts ...
+        ,'YY', p_adjusted_hampel_pref' ...
+        ,'YYstddev', 0 ...
+        ,'rotations', 0 ...
+        ,'separation', 0 ...
+        ,'fringe_separation', separacionFranjas ...
+        ,'xts', xts ...
+        ,'timeAltitude', timeAltitude ...
+    );    
+    
+    return    
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Ajuste
+% [fitresult, gof] = fit((1:size(p_adjusted_hampel_pref,1))',p_adjusted_hampel_pref,'smoothingspline');
+fitresult = smooth(p_adjusted_hampel_pref, 11.25*20);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% figure
+% [fitresult, gof] = fit((1:size(p_adjusted_hampel_pref,1))',p_adjusted_hampel_pref,'poly2');
+% [fitresult, gof] = fit((1:size(p_adjusted_hampel_pref,1))',p_adjusted_hampel_pref,'poly1')
+plot(xts, p_adjusted_hampel_pref,'.')
+hold on
+plot(xts, fitresult(1:size(p_adjusted_hampel_pref,1)), 'rx')
+xlabel('Date time (dd/mm HH:MM)')
+ylabel('Fringe displacement (px)')
+title({...
+    'Displacement of interference fringes and Fit', ...
+    ['from ' datestr(x_start) ' to ' datestr(x_end)] ...
+})
+legend('Original data', 'Moving average fit (120 points, 2 rotations')
+
+% set(gca,'XMinorTick','on')
+% grid on
+% datetick('x', 'dd/mm HH:MM')
+% ax = gca;
+% ax.XTickLabelRotation = 90;
+% hold on
+% xlim([x_start x_end])
+% ylim([ylimites(1) ylimites(2) ]);
+% ylimites = ylim();
+% ylimdiff = diff(ylimites);
+config_plot
+plotheightstar
+draw_rotations(rotation0_locs, ylim, ax)
+usb2018_saveFigureToFile('ajuste')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Resta de ajuste
+
+if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
+    pfit=p_adjusted_hampel_pref - fitresult(1:size(p_adjusted_hampel_pref));    
+else
+    pfit=p_adjusted_hampel_pref;    
+end
+
+
+% figure
+plot(xts, pfit,'x');
+% if exist('locs') & exist('tm')
+%     line([tm(rotation90_locs) tm(rotation90_locs)], ylim,'color', 'k', 'linewidth', 1)
+% end
+% set(gca,'XLim', [startDate endDate])
+% datetick('x','dd/mm HH:MM','keepticks')
+% title({...
+%     'Corrected fringe displacement', ...
+%     ['from ' datestr(x_timestamp(1)) ' to ' datestr(x_timestamp(size(p,1)))] ...
+% }) % , 'with smoothed curve' , 'with indicators of rotation'
+% xlabel('Date time (dd/mm HH:MM)')
+% ylabel('Corrected fringe displacement (px)')
+
+xlabel('Date-time (dd/mm HH:MM)')
+ylabel('Fringe displacement (px)')
+title({...
+    'Corrected Displacement of interference maxima', ...
+    ['from ' datestr(x_start) ' to ' datestr(x_end)] ...
+%     ,'(First 30m)' ...
+}) % , 'with smoothed curve' , 'with indicators of rotation'
+legend(['Displacement of maxima', char(10), 'Compass at 0ºN (laser 90ºN)'])
+
+
+
+% grid on
+% set(gca,'XMinorTick','on')
+% datetick('x', 'dd/mm HH:MM')
+% ax = gca;
+% ax.XTickLabelRotation = 90;
+
+config_plot
+
+plotheightstar
+
+
+% set(gca, 'XTickMode', 'auto', 'XTickLabelMode', 'auto')
+% xlim([x_start x_end])
+% set(gca,'XMinorTick','on')
+% datetick('x', 'dd/mm HH:MM','keeplimits')
+% ax = gca;
+% ax.XTickLabelRotation = 90;
+
+
+% config_plot
+if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
+    ylim([-100 100])
+end
+draw_rotations(rotation0_locs, ylim, ax)
+usb2018_saveFigureToFile('ajustada')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Analisis de rotaciones
+
+if ~rotationsFound
+    fprintf('\nWARNING: no rotations detected. No analysis of rotation will be done.\n\n')
+    writeSummary( ...
+         'sessionId', [videoId '-no-rotation']...
+        ,'XX', [(x_start + x_end)/2] ...
+        ,'YY', pfit' ...
+        ,'YYstddev', [] ...
+        ,'rotations', 0 ...
+        ,'separation', 0 ...
+        ,'fringe_separation', separacionFranjas ...
+        ,'xts', xts ...
+        ,'timeRange', [x_start x_end] ...
+        ,'timeAltitude', timeAltitude ...
+        ,'filename', processing_session.name ...
+    );    
+    return
+end
+
+clear legends
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Rotaciones independientes
+
+colors = {'r' 'b' 'g' 'y' 'k'};
+
+
+clear XX YY
+[XX, YY] = divideInChunks(xts, pfit, rotation0_locs, 360, orientacion);
+
+if isempty(YY)
+    fprintf('Empty YY, not enough rotation data. Neext !\n')
+    return
+end
+
+errorsBars=true;
+
+rotsgroup = 10;
+rotsstep = 10;
+[XXm, YYm, YYstddev] = plotInGroups(XX, YY ...
+    ,'groupsize', rotsgroup ...
+    ,'groupstep', rotsstep ...
+    ,'saveFigures', true ...
+    ,'errorBars', errorsBars ...
+    ,'plotGroups', true ...
+    ,'hampelParams', nan ...
+    ,'normalizeBy', separacionFranjas ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...       
+    ,'saveTxtData', saveTxtData ...
+);
+
+writeSummary( ...
+     'sessionId', [videoId '-normalized']...
+    ,'XX', XXm ...
+    ,'YY', YYm ...
+    ,'YYstddev', YYstddev ...
+    ,'rotations', rotsgroup ...
+    ,'separation', rotsstep ...
+    ,'fringe_separation', separacionFranjas ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...
+    ,'filename', processing_session.name ...
+);
+
+[XXm, YYm, YYstddev] = plotInGroups(XX, YY ...
+    ,'groupsize', rotsgroup ...
+    ,'groupstep', rotsstep ...
+    ,'saveFigures', true ...
+    ,'errorBars', errorsBars ...
+    ,'plotGroups', true ...
+    ,'hampelParams', nan ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...
+    ,'saveTxtData', saveTxtData ...
+);
+
+writeSummary( ...
+     'sessionId', videoId ...
+    ,'XX', XXm ...
+    ,'YY', YYm ...
+    ,'YYstddev', YYstddev ...
+    ,'rotations', rotsgroup ...
+    ,'separation', rotsstep ...
+    ,'fringe_separation', separacionFranjas ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...
+    ,'filename', processing_session.name ...
+);
+
+errorsBars=false;
+rotsgroup = 1;
+rotsstep = 1;
+[XXm, YYm, YYstddev] = plotInGroups(XX, YY ...
+    ,'groupsize', rotsgroup ...
+    ,'groupstep', rotsstep ...
+    ,'saveFigures', true ...
+    ,'errorBars', errorsBars ...
+    ,'plotGroups', true ...
+    ,'hampelParams', nan ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...        
+    ,'saveTxtData', saveTxtData ...
+);
+
+writeSummary( ...
+     'sessionId', [videoId '-independientes'] ...
+    ,'XX', XXm ...
+    ,'YY', YYm ...
+    ,'YYstddev', YYstddev ...
+    ,'rotations', rotsgroup ...
+    ,'separation', rotsstep ...
+    ,'fringe_separation', separacionFranjas ...
+    ,'xts', xts ...
+    ,'timeRange', [x_start x_end] ...
+    ,'timeAltitude', timeAltitude ...
+    ,'filename', processing_session.name ...
+);
+
+function [ adjusteddata ] = adjustdata( data, varargin )
+    %ADJUSTDATA(data) tries to find continuous series from a scrambled data
+    %tiempo es 1era dimension de data
+    
+    format bank
+
+    % default values
+    backInTime = 10;
+    maxHeightDifference = 45;
+    ratio_fringe_separation = .75;
+
+    nVarargs = length(varargin);
+    for k = 1:2:nVarargs
+        if strcmp(varargin{k}, 'backInTime')
+            backInTime = varargin{k+1};
+        elseif strcmp(varargin{k}, 'maxHeightDifference')
+            maxHeightDifference =  varargin{k+1};
+        elseif strcmp(varargin{k}, 'ratio_fringe_separation')
+            ratio_fringe_separation =  varargin{k+1};
+        end
+    end
+
+    bucket = nan(size(data));
+    % the initial bucket values is the average of the first 50 point
+    bucket(1, :) = (mean(data(1:50, :), 'omitnan'));
+    bucket(2, :) = (mean(data(1:50, :), 'omitnan'));
+    
+    %% code to draw horizontal line per every fringe
+    %plot(data, '.')
+    %hold on
+    %for b=1:length(bucket);line([1 length(data)],[bucket(1,b) bucket(1,b)]);end
+    
+    % number of bucket created
+    createdBuckets = 2; %length(bucket);
+    
+    % the maximum space between fringes is the mean of the cleaned
+    % (hampeled) number of pixels between fringes 
+    avgFringeSeparation = mean(hampel(diff(bucket(1,:))), 'omitnan');
+    maxHeightDifference = ratio_fringe_separation*mean(hampel(diff(bucket(1,:))), 'omitnan');
+    
+    % these are the number of time steps we average to determine the best
+    % bucket
+    stepsBack = 40;
+    
+    nAvg = 1;
+    start = 1;
+    global xts
+   
+    for tiempo = 2 : size(data, 1)
+%         if tiempo == 105
+%             stop=1;
+%         end
+
+        % avgStepsBack has to be greater than 1
+        % then we average last avgStepsBack        
+        avgStepsBack = max(1, tiempo - stepsBack);
+
+        
+        for col=1:size(data,2)
+            if tiempo > 2 && size(bucket,1) >= tiempo-1
+                bucket(bucket==0) = nan;
+                % avgBackBucket = mean(bucket(avgStepsBack:tiempo-1, :), 'omitnan');
+               
+                avgBackBucket2 = hampel(movmean(bucket(avgStepsBack:tiempo-1, :), [2 0], 'omitnan'));
+                avgBackBucket = avgBackBucket2(end, :);
+%                 como = 1;
+            else
+                try
+                    avgBackBucket = bucket(avgStepsBack:tiempo-1, :);
+                catch
+                    force_break = true
+                    break
+                end
+%                 como = 2;
+            end            
+            val = data(tiempo, col);
+            if tiempo == 149 && val == 456
+                stop=1;
+            end            
+            if val==0 || isnan(val)
+                continue
+            end               
+%             if tiempo == 41
+%                 stop=1;
+%             end
+            ok = 0;
+            bestBucket = nan;
+%             fprintf('\n')
+% 
+
+%             %%%%%%%%%%%%%%
+%             %%%% Animate adjust lines
+%             fprintf('val: %0.0f, max: %0.0f, min: %0.0f\n', val, nan, nan)
+%             fprintf('%0.0f %0.0f %0.0f %0.0f %0.0f %0.0f %0.0f %0.0f \n', bucket(:,1:8)')
+%             fprintf('\n')
+%             plot(bucket, 'o-')
+%             xlim([0, size(bucket,1)])
+%             hold on
+%             plot(data, '.')
+%             plot(tiempo, val,'X')
+%             hold off
+%             drawnow()
+%             %%%%%%%%%%%%%%%%%%%%%%%
+            
+            for b = 1:createdBuckets       
+                if isnan(val)
+%                     bestBucket = 1;
+%                     ok=1;
+                    break
+                end
+                if b == 5
+                    stop=1;
+                end
+%                 % avgStepsBack has to be greater than 1
+%                 % then we average last avgStepsBack
+%                 avgStepsBack = max(1, tiempo - stepsBack);
+                valorBucketAnterior = avgBackBucket(b);
+
+                if val < valorBucketAnterior + maxHeightDifference ...
+                        && val > valorBucketAnterior - maxHeightDifference 
+%                 if (abs(valorBucketAnterior - val) < maxHeightDifference)
+%                     if isnan(bestBucket) || (abs(valorBucketAnterior  - val) < abs(bucket(tiempo-1, bestBucket) - val))
+                        if isnan(bestBucket) || abs(avgBackBucket(b)-val) < abs(avgBackBucket(bestBucket)-val)
+                            bestBucket = b;
+                        end
+%                     end             
+                end
+            end
+%             if isnan(val)
+%                 continue
+%             end
+            if ~isnan(bestBucket)
+                bucket(tiempo,bestBucket) = val;
+            else
+%                 s=1
+%                 if    (     val > (min(nonzeros(bucket(end-1,:))) - avgFringeSeparation) ...
+%                        )    ...
+%                          && ...
+%                        (    val < (max(nonzeros(bucket(end-1,:))) + avgFringeSeparation) ...
+%                        )
+                    createdBuckets = createdBuckets + 1;
+                    bucket(tiempo, createdBuckets) = val;
+%                 if createdBuckets < 40
+% 
+%                 else
+%                     bucket(tiempo, 1) = nan;
+%                 end
+%                 end
+            end
+            if createdBuckets > 600
+                muchosBuckets = createdBuckets
+                adjusteddata = bucket;
+                return
+            end
+        end
+        if exist('force_break','var') && force_break
+            break
+        end
+%         if mod(tiempo, 10000) == 0
+%             p_adjusted = bucket;
+%             fprintf('tiempo: %d, val: %02d, buckets: %d', tiempo, val, size(bucket,2))
+%             fprintf('\n')
+%             fprintf('%02d ', data(tiempo-1, 1:10))
+%             fprintf('\n')
+%             fprintf('%02d ', data(tiempo, 1:10))
+%             fprintf('\n')     
+%             plot(xts(1:size(p_adjusted,1)), p_adjusted, '.')
+%             set(gca,'XMinorTick','on')
+%             grid on
+%             datetick('x', 'HH:MM')
+%             stop=1;
+%         end        
+    end
+    bucket(bucket==0) = NaN;
+    if size(bucket,1) ~= size(data,1)
+        a=1;
+    end
+    adjusteddata = bucket;
+%     figure
+%     plot(adjusteddata,'.')
+%     figure
+%     plot(data,'.')
+end
+
+% plot height of star
+if exist('timeAltitude') && ~isempty(timeAltitude)
+    holdStatus = ishold;
+    hold on
+    ax = gca;
+    height = diff(ax.YLim);
+    yyaxis right
+    ax.YColor = [0 0 0];
+    ylimites = [-90 90];
+    ylim(ylimites)
+    
+    ax = gca;
+    ax.YTick = [-90 -80:20:80 90];
+    
+    vertical_steps = -90:180/20:90;
+    ylabel('Altitude of star (°, blue line)')
+
+    if ax.XLim == [0 360]
+        altitudes = pchip(timeAltitude(:,1), timeAltitude(:,2), ...
+            xts(1):(xts(end)-xts(1))/360:xts(end));
+
+        azimuths = pchip(timeAltitude(:,1), timeAltitude(:,3), ...
+            xts(1):(xts(end)-xts(1))/20:xts(end));
+        
+        plot(0:360, altitudes, 'b-', 'lineWidth', 3)
+        plot(azimuths, vertical_steps,'b-', 'lineWidth', 3)                  
+    else
+        plot(timeAltitude(:,1),timeAltitude(:,2),'b.-','lineWidth',3)
+    end
+    yyaxis left
+    if holdStatus
+        hold on
+    end
+endfunction [XXm, YYm, YYstddev] = plotInGroups(XX, YY, varargin)
+% plotInGroups(Y, rotsgroup, options) plots mean(Y) vs 1:length(Y), in groups of rotsgroup
+%  Options:
+%     groupsize size of grouping
+%     groupstep jump this number of elements before next grouping
+%     saveFigures = true : whether to save the figure;
+%     errorBars = true: whether to plot error bars;
+%     errorx = 2: default x errorbar width;
+%     hampelParams = nan: if filter the values with hampel, [stddev numpoints]
+%       stddev: points exceeding this standard deviation are filtered
+%       numpoints: points to consider for the standard deviation
+%            (not implemented, defaults to all points)
+
+global videoId
+global processing_session
+
+% limits = [-0.4 0.4];
+% limitsAbs = [-40 40];
+limits = [-1 1];
+limitsAbs = [-100 100];
+warning('off', 'MATLAB:colon:nonIntegerIndex')
+
+% default values
+rotsgroup = 6;
+rotsstep =  3;
+errorBars = true;
+errorx = 2;
+hampelParams = nan;
+plotGroups = false;
+normalizeBy = nan;
+showLegend = false;
+saveTxtData = false;
+
+saveFigures = false;
+
+nVarargs = length(varargin);
+for k = 1:2:nVarargs
+    if strcmp(varargin{k}, 'groupsize')
+        rotsgroup = varargin{k+1};
+    elseif strcmp(varargin{k}, 'groupstep')
+        rotsstep =  varargin{k+1};
+    elseif strcmp(varargin{k}, 'errorBars')
+        errorBars = varargin{k+1};
+    elseif strcmp(varargin{k}, 'saveFigures')
+        saveFigures = varargin{k+1};        
+    elseif strcmp(varargin{k}, 'errorx')
+        errorx = varargin{k+1};       
+    elseif strcmp(varargin{k}, 'hampelParams')
+        hampelParams = varargin{k+1};       
+    elseif strcmp(varargin{k}, 'plotGroups')
+        plotGroups = varargin{k+1};
+    elseif strcmp(varargin{k}, 'normalizeBy')
+        normalizeBy = varargin{k+1};
+    elseif strcmp(varargin{k}, 'showLegend')
+        showLegend = varargin{k+1};
+    elseif strcmp(varargin{k}, 'timeAltitude')
+        timeAltitude =  varargin{k+1};            
+    elseif strcmp(varargin{k}, 'timeRange')
+        timeRange =  varargin{k+1};         
+    elseif strcmp(varargin{k}, 'xts')
+        xts =  varargin{k+1};     
+    elseif strcmp(varargin{k}, 'saveTxtData')
+        saveTxtData =  varargin{k+1};     
+    end
+end
+
+% plotGroups = false;
+
+% saveFigures = false;
+
+
+i = 0;
+for r=1:rotsstep:size(YY,1)
+    i = i + 1;
+    if (r+rotsstep) > size(YY,1)
+        rLimit(i) = size(YY,1);
+        r = max(1, rLimit(i) - rotsstep +1);
+    else
+        rLimit(i) = min(size(YY,1), r+rotsgroup-1);    
+    end
+    YYlim(i, :) = [r rLimit(i)];
+    
+    y{i} = YY(r:rLimit(i),:);
+    x{i} = XX(r:rLimit(i),:);
+
+    hampeled = false;
+    hampelStr = [];
+    hampelFile = [];
+    if ~isempty(hampelParams) && ~isnan(hampelParams) && size(y{i},1) > 1
+        hampeled = true;
+        y{i} = hampel(y{i}, size(y{i},1), hampelParams(1));
+        hampelStr =  [' w/o outliers' ' (' num2str(hampelParams(1)) ' stddev)'];
+        hampelFile = ['-clean'];
+    end    
+    
+    YYm(i,:) = nanmean(y{i}, 1);
+    XXm(i) = nanmean(nanmean(x{i}, 2));
+    YYstddev(i,:) = nanstd(y{i}, 0, 1)./sqrt(sum(~isnan(y{i})));
+end
+
+normalizedByStr = [];
+normalizedByFile = [];
+if ~isnan(normalizeBy)
+    YYm = YYm/normalizeBy;
+    YYstddev = YYstddev/normalizeBy;
+    normalizedByStr = [' normalized by ' num2str(normalizeBy) ' [px/fringe]'];
+    normalizedByFile = ['-normalized'];
+else
+    normalizedByStr = [' (px)'];
+end
+
+numrotaciones = size(YYm,1);
+numRotPromediadas = size(y{1},1);
+
+if plotGroups
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % plot groups
+    i = 0;
+    figure;
+    hold on
+    clear legends
+    
+    colorMap = hot(size(YYm,1)*2);
+    set(groot,'defaultAxesColorOrder', colorMap )
+    for i=1:size(YYm,1)
+        if errorBars % && numrotaciones > 1
+            fprintf('plot %d/%d, i:%d s:%d\n', i, numrotaciones, i,rLimit(i))
+%             errorbarxy( ...
+%                 0:size(YYm,2)-1, ...
+%                 YYm(i,:), ...
+%                 ones(1,360)*errorx, ...
+%                 YYstddev(i,:), ...
+%                 {'k.-', 'c', 'm'})
+            errorbar(...
+                0:size(YYm,2)-1, ...
+                YYm(i,:), ...
+                YYstddev(i,:) ...
+            )
+        else
+            plot(1:size(YYm,2), YYm, '.-', 'markersize', 5)
+        end
+        
+        if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
+            ylim(limits)
+        end        
+
+        legends{i} = [ ...
+            num2str(i) ': rot: ' num2str(YYlim(i,1)) '->' num2str(YYlim(i,2)) ......
+            ', hora: ' datestr(XX(i,1), 'HH:MM') '->' ...
+            datestr(XX(rLimit(i), size(XX,2)), 'HH:MM') ...
+        ];          %#ok<AGROW>
+    end
+    reset(groot)
+    
+    totalGroups = size(YYm, 1);
+    
+
+    title( ...
+        { ...
+            ['Fringe displacement for rotations'], ...
+            ['Mean of ' int2str(numRotPromediadas) ' rotations' normalizedByStr hampelStr ' every ' num2str(rotsstep) 'rotations'], ...
+            ['Start: ' datestr(timeRange(1)) ' - End: ' datestr(timeRange(end))], ...
+            ['(session name: ' videoId ')'], ...
+        }, ...
+        'FontSize', 16, ...
+        'Interpreter', 'none' ...
+    )                
+    
+    xlim([0 360])
+    
+    if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
+        ylim(limits)
+    end            
+    
+    xlabel('Angle (º)')
+    ylabel(['Maximum displacement ' normalizedByStr])
+    
+    if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
+        if ~isnan(normalizeBy)
+            ylim(limits)
+        else
+            ylim(limitsAbs)
+        end
+    end        
+
+    if rLimit(i) == size(YY,1)
+%         legend(legends, 'Location', 'northeastoutside')
+    end
+    plotheightstar
+    figname = ['mean-group-r' num2str(rotsgroup) 's' num2str(rotsstep) normalizedByFile hampelFile];
+
+    saveData = false;
+    if saveFigures 
+        if rotsgroup == 10 && rotsstep == 10
+            saveData = true;
+        end
+        usb2018_saveFigureToFile(figname, 'timeRange', timeRange, 'saveTxtData', saveTxtData)
+    end    
+end
+
+% % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % % plot absolute displacement vs time
+% % if size(YYm,1) > 1
+% %     figure
+% %     % [Y,I] = max(X,[],DIM) operates along the dimension DIM.
+% %     [Ymax,Imax] = max(YYm, [], 2);
+% %     [Ymin,Imin] = min(YYm, [], 2);
+% %     Y = Ymax-Ymin;
+% %     plot(XXm(1:size(Y,1)), Y, 'o-')
+% %     xlim([XXm(1) XXm(size(Y,1))])
+% %     ylim([0 1.1])
+% %     xlabel('Timestamp of Average of (Average timestap of rotation) of group of rotations (DD/MM HH:MM)')
+% %     ylabel(['Absolute displacement' normalizedByStr hampelStr ])
+% %     title({ ...
+% %         ['Absolute displacement of maxima' normalizedByStr hampelStr] ...
+% %         , ['Start: ' datestr(xts(1)) ' - End: ' datestr(xts(end))] ...
+% %         , ['Mean of ' int2str(numRotPromediadas) ' rotations' normalizedByStr hampelStr ' every ' num2str(rotsstep) 'rotations'] ...        
+% %         , ['(r' num2str(rotsgroup) 's' num2str(rotsstep) ')'] ...
+% %     })
+% % %     legend({ ...
+% % %         'Each rotation has an average timestamp' ...
+% % %         ,'each group of rotations has an average timestamp' ...
+% % %     })
+% %     datetick('x','dd/mm HH:MM','keepticks')
+% %     ax = gca;
+% %     ax.XTickLabelRotation = 90;
+% %     plotheightstar
+% %     if saveFigures 
+% %         usb2018_saveFigureToFile(['abs-displacement-r' num2str(rotsgroup) 's' num2str(rotsstep) normalizedByFile hampelFile])
+% %     end
+% % end
+
+% YL = ylim;
+% i=0;
+% for r=1:rotsstep:size(YY,1)
+%     i = i + 1;
+%     text(size(XX,2)/5, i*5 + YL(1), num2str(i))
+% end
+
+% configure common options for plots
+
+set(gca, 'XTickMode', 'auto', 'XTickLabelMode', 'auto')
+if exist('x_start', 'var') && exist('x_end', 'var')
+    xlim([x_start x_end])
+end
+
+xlabel('Time');
+set(gca,'XMinorTick','on')
+datetick('x', 'dd/mm HH:MM','keeplimits')
+ax = gca;
+% ax.XTickLabelRotation = 90;function ret = saveFigureToFile(figure_name)
+
+global pathToFigures
+global videoId
+global saveFile
+global frameToTime
+    
+if ~exist('figure_name', 'var') && fprintf('\nNo name for figure provided, cant save\n') ...
+    || ...
+   ~exist('pathToFigures', 'var') && fprintf('\nNo path for figures configures\n') 
+    ret = false;    
+    return
+end
+
+if ~exist('videoId', 'var')
+    videoId = '';
+end
+
+if exist('saveFile', 'var') & saveFile == true
+    videodatestr = datestr(frameToTime(1,2), 'yyyymmdd_hhss');
+    nowdate = datestr(now, 'yyyymmdd_hhss');
+    set(gcf,'units','normalized','outerposition',[0 0 1 1]);
+    saveas(gcf,[pathToFigures videodatestr '-' videoId '-' figure_name '-' nowdate '.jpg']);
+%     close;
+end
+% colorMap = hot(40);
+% 
+% figure
+% for c=1:length(colorMap)
+%     line([0 10],[(c-1)*5 (c-1)*5], 'Color', colorMap(c,:))
+% end
+% return
+
+% read datetime/alt from stellarium
+
+% datetime('2018-09-01T12:12:12','InputFormat','yyyy-MM-dd''T''HH:mm:ss')
+
+% [numData,textData,rawData] = xlsread('D:\Users\an\experimento-usb-interferometro\tiempo_vs_alt_hip54589_200201-200531.csv');
+
+global timeAltitude
+
+height_star_data_path = 'D:\Users\an\experimento-usb-interferometro\height-star\';
+star_name='HIP54589';
+altitude_filename = [height_star_data_path 'heightstar-' star_name '-' ...
+        datestr(date_start, 'YYYY') '-' datestr(date_start, 'mm') '.csv' ];  
+    
+loadfile = true;
+if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
+    altitude_date_start = timeAltitude(1,1);
+    altitude_date_end   = timeAltitude(end,1);
+    if x_start >= altitude_date_start && x_end <= altitude_date_end
+        loadfile = false;
+    end
+end
+        
+if loadfile && exist(altitude_filename, 'file')
+    fprintf(['Loading altitude/azimuth for star' star_name '\n'])
+    [numData,textData,rawData] = xlsread(altitude_filename);
+
+    for r=1:size(rawData)
+        t=r;
+        timeAltitude(t,1)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
+        timeAltitude(t,2)=rawData{r,5};
+        timeAltitude(t,3)=rawData{r,4};
+        stop=1;
+    end
+end
+       
+
+s=1;
+

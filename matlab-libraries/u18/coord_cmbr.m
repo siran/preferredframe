@@ -1,0 +1,69 @@
+clc
+format long
+% 
+% hora=clock; 
+% 
+
+% 
+% % JD=julday([hora(3) hora(2) hora(1) fraction])
+
+% RAD=180/pi
+% 
+% % fraction = convertdms([0 0 0],'H','f')
+% 
+% JD=julday([2010 11 01 0])
+% horiz_coo([166.65 -27.333]./RAD, JD,[-66.91 10.5]./RAD).*RAD
+
+% RAD=180/pi;
+% [a b]=eq2gal([166.65/RAD], [-27.333/RAD],'g')
+% a*RAD
+% b*RAD
+
+% RAD = 1
+% 
+% l=276/RAD
+% b=30/RAD
+% 
+% % syms d a
+% solve('cos(b)*cos(l-33)=cos(d)*cos(a-282.25/RAD)', ...
+%     'cos(b)*sin(l-33/RAD) = sin(d)*sin(62.6/RAD)+cos(d)*sin(a-282.25/RAD)*cos(62.6/RAD)', ...
+%     'd','a')
+
+d = datenum(datestr(now)) - datenum('2000-01-01 12:00')+1
+% d = datenum('1994-06-16 18:00') - datenum('2000-01-01 12:00')
+
+LMST = mod(280.46061837 + 360.98564736629 * d, 360)
+% LMST = mod(280.46061837 + 360.98564736629 * d, 360)
+
+hd = LMST/15
+h = fix(hd)
+
+md = (hd-h)*60;
+m = fix(md)
+
+s = (md-m)*60
+
+
+RAD=pi/180
+
+% observers latitude
+phi = 66.57;
+
+RA=166.65*RAD
+RAh = 11 + 6/60
+H = (LMST - RA)*RAD
+
+delta = -27.333*RAD
+
+a = asin( sin(delta).*sin(phi) + cos(delta).*cos(phi)*cos(H)  )/RAD;
+A = asin( -sin(H)*cos(delta)./cos(a*RAD) ) /RAD
+
+a
+A
+
+
+% A = atan(-(sin(H)*cos(delta)) / (cos(phi)*sin(delta)-sin(phi)*cos(delta)*cos(H)))
+% A*180/pi
+
+
+GST = (datenum(datestr(now)) - datenum('2004-01-01 00:00'))*236

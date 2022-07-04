@@ -1,0 +1,44 @@
+% corrigiendo pendiente
+% m = -43.053227635975283;
+% ptemp = zeros(size(p));
+% ptemp = p;
+% 
+% for t=1:size(p,1)
+%     if (mod(t,10)==0) 
+%         fprintf('%d ', t);
+%     end
+%     if (mod(t-1,200)==0) 
+%         fprintf('\n');
+%     end      
+%     p(t, :) = p(t,:) - (x_timestamp(t)- x_timestamp(1))*m;
+% end
+clear pendiente pendientex pendientey pa f
+for i=1:size(puntos,2)
+%     puntos(i).Position(1)
+    pendientex(i) = puntos(i).Position(1);
+    pendientey(i) = puntos(i).Position(2);
+%     pendientex(i) = puntos(i).DataIndex(1);
+    
+end
+
+[tmp ind]=sort(pendientex);
+pendientex = pendientex(ind);
+pendientey = pendientey(ind);
+
+x=pendientex';
+y=pendientey';
+% f = fit(pendientex',pendientey','smoothingspline');
+[curve, goodness] = fit( x, y, 'pchipinterp' );
+   
+for t=1:size(p,1)
+    pa(t,:) = p(t,:) - curve(x_timestamp(t));
+end
+
+% figure
+% plot(x_timestamp,pa,'.')
+
+
+% hold on
+% plot(curve)
+
+fprintf('fin')

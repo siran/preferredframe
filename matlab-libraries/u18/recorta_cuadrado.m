@@ -1,0 +1,12 @@
+ptemp2 = p
+p=pa
+grafico_max
+
+xmin=min(limite_cuadrado(1).Position(1),limite_cuadrado(2).Position(1))
+xmax=min(limite_cuadrado(1).Position(1),limite_cuadrado(2).Position(1))
+
+ymin = min(limite_cuadrado(1).Position(2),limite_cuadrado(2).Position(2))
+ymin = max(limite_cuadrado(1).Position(2),limite_cuadrado(2).Position(2))
+
+set(gca,'XLim', [xmin xmax])
+set(gca,'YLim', [ymin ymax])
