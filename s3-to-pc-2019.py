@@ -17,14 +17,17 @@ profile = "--profile eduweb-anrodriguez"
 downloaded_sessions_cache_filename = "downloaded_sessions.txt"
 with open(downloaded_sessions_cache_filename, "r") as fp: downloaded_sessions = json.loads(fp.read())
 
-command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2022-06-1'
+## old
+# command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2022-06-2'
+
+command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"2022-06-28"{{print $2}}' | sed 's/^[^0-9].*$//'"""
 print(command_top)
 directories = subprocess.check_output(command_top, shell=True).decode().split('\n')
 for _directory in tqdm(directories):
     # , desc=f"Directory {_directory.strip()[4:-1]}"
     if not _directory:
         continue
-    directory = _directory.strip()[4:-1]
+    directory = _directory.strip()
 
     # if directory < '2021-03-27':
     #     tqdm.write(f"skipping {directory}")
@@ -67,7 +70,7 @@ for _directory in tqdm(directories):
                 print(output.strip())
             break
 
-    if _directory == directories[-2]:
+    if _directory == list(filter(None,directories))[-1]:
         # dont save cache for last directory
         break
 
