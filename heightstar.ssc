@@ -1,0 +1,66 @@
+// Author: ANM
+// Version: 1
+// License: Public Domain
+// Name: Coordinates of HIP54589
+
+// Made on Stellarium 0.16.1
+
+//core.debug(core.mapToString(core.getObserverLocationInfo()))
+
+year = "2022"
+month = "07"
+
+local_output_path = "D:\\Users\\an\\experimento-usb-interferometro\\"
+
+dir_name = "height-star"
+
+output_path = local_output_path + "\\" + dir_name + "\\"
+
+// star name
+object_info = "HIP54589"
+observer_location = "Caracas, Venezuela"
+
+// how many points per file
+nmeses = 1
+diasmes = 31
+horasdia = 24
+medidashora = 3
+minutos_medida = 60 / medidashora
+
+ciclos = nmeses*diasmes*horasdia*medidashora
+
+///////////////////////// don't modify below this line
+
+output_fname = output_path + "heightstar-"+object_info+"-"+year + "-" + month + ".csv"
+
+core.resetOutput()
+core.setObserverLocation(observer_location)
+core.debug("Coordinates of star "+object_info+" (times are in UTC) in "+observer_location+":");
+core.setDate(year + "-" + month + "-01T00:00:00", "UTC")
+
+obj=core.selectObjectByName(object_info, true)
+core.wait(1);
+
+//map=core.getObjectInfo("HIP 54589")
+//core.debug(core.mapToString(map))
+
+for (i=0; i<ciclos; i++)
+{
+	map=core.getObjectInfo(object_info)
+	date = core.getDate()
+	core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"])
+	core.setDate("+"+minutos_medida+" minutes", "UTC")
+	core.wait(0.1);
+break
+
+	//core.setObserverLocation("Caracas, Venezuela")
+	//obj=core.selectObjectByName("HIP 54589", true)
+	//map=core.getSelectedObjectInfo()
+	//core.debug(core.mapToString(map))
+	//core.debug(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"])
+	//core.debug(date)
+
+}
+core.saveOutputAs(output_fname)
+core.debug("fin")
+
