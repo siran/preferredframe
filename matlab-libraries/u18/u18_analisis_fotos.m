@@ -31,18 +31,6 @@ fprintf('Scanning goodness of files...\n')
 % scan goodness of files
 restart = false;
 
-files_images_raw = dir(strcat(path_images,'*.jpg'));
-info1 = imfinfo([path_images files_images_raw(1).name]);
-info2 = imfinfo([path_images files_images_raw(2).name]);
-info3 = imfinfo([path_images files_images_raw(3).name]);
-
-% sometimes the first image is rotated 90degress which causes the program
-% to error out
-if info1.Width ~=info2.Width && info1.Width ~=info3.Width
-    copyfile([path_images files_images_raw(1).name], [path_images 'ignored_images'])
-end
-
-
 if (~exist('files_images', 'var'))   
     % leo archivos
     files_images_raw = dir(strcat(path_images,'*.jpg'));
@@ -72,6 +60,19 @@ if (~exist('files_images', 'var'))
         
         image_counter = image_counter+1;
         try
+            if t==1
+                files_images_raw = dir(strcat(path_images,'*.jpg'));
+                info1 = imfinfo([path_images files_images_raw(1).name]);
+                info2 = imfinfo([path_images files_images_raw(2).name]);
+                info3 = imfinfo([path_images files_images_raw(3).name]);
+
+                % sometimes the first image is rotated 90degress which causes the program
+                % to error out
+                if info1.Width ~=info2.Width && info1.Width ~=info3.Width
+                    copyfile([path_images files_images_raw(1).name], [path_images 'ignored_images'])
+                end
+            end
+
             info = imfinfo([path_images files_images_raw(t).name]);
             date = info.DigitalCamera.DateTimeOriginal;
             files_images(image_counter) = files_images_raw(t);
@@ -79,8 +80,9 @@ if (~exist('files_images', 'var'))
             x_timestamp(image_counter) = files_images(image_counter).datenum;
             orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
         catch
-            fprintf('Invalid file %s, deleting... \n', full_name_image)
-            delete(full_name_image)
+            fprintf('Invalid file %s, renaming... \n', full_name_image)
+%             delete(full_name_image)
+            movefile(full_name_image, [full_name_image '-invalid'])
             restart = true
             continue
         end
@@ -89,24 +91,35 @@ if (~exist('files_images', 'var'))
     orientacion_orig = orientacion;
     [tmp, ind]=sort([files_images.datenum]);
     files_images = files_images(ind);
+    x_timestamp = x_timestamp(ind);
 end
 
 maxfile = length(files_images);
 
 % restarting if files were deleted
 if restart
-    clear all -except session processing_session date_start date_end
-    fprintf('Restarting')
+    new_date_start = datestr(session_datenum,'yyyy-mm-dd HH:MM');
+    fprintf('Setting date_start from %s to %s\n', date_start, new_date_start)
+    date_start = new_date_start
+    clearvars -except session processing_session date_start date_end day_session session_datenum
+    fprintf('Restarting\n')
     u18w_general
     return
 end
 
-p           = nan(length(files_images),20);
+p = nan(length(files_images),20);
 %     orientacion = nan(length(1:stepFrames:maxfiles), 1 );
 %     x_timestamp = nan(length(1:stepFrames:maxfiles), 1 );
 
 % [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),                                           'MinPeakHeight', 0.95);
 % [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
+
+invalid_elements = find(diff(x_timestamp)<=0,1,'first');
+if ~isempty(invalid_elements)
+    invalid_index = invalid_elements(1);
+    x_timestamp(invalid_index+1) = (x_timestamp(invalid_index) + ...
+        x_timestamp(invalid_index+2))/2;
+end
 [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp);
 
 num_rotations = length(rotation0_pks);

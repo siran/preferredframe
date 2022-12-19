@@ -1,4 +1,4 @@
-function [XX, YY] = divideInChunks(x, y, rotation0_locs, numpoints, orientacion)
+function [XX, YY] = divideInChunks(x, y, rotation0_locs, numpoints, orientacion, processing_session)
 % divideInChunks(Y, divisions, numpoints)
 % returns a matrix `chunks` dividing vector Y by its indices `divisions` 
 % and does a numpoints interporlation
@@ -53,12 +53,14 @@ for k=rotacionini:rotacionfin
             xx ...
         );
         legends{i} = int2str(k);
+%         XX(i,N==0) = nan;
+%         YY(i,N==0) = nan;
 %     catch
 %         nada=1;
 %     end
 end
 
-if ~isempty(YY)
+if ~isempty(YY) && processing_session.removeOutliers
     YY = hampel(YY);
 end
 

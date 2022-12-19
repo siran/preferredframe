@@ -1,4 +1,126 @@
 index = length(usb_sessions)+1;
+usb_sessions(index).name = '200229-200303';
+usb_sessions(index).date_start = '2020-02-29 06:30';
+usb_sessions(index).date_start = '2020-03-01 11:30';
+usb_sessions(index).date_start = '2020-03-01 17:30';
+usb_sessions(index).date_start = '2020-03-01 18:30';
+usb_sessions(index).date_start = '2020-03-01 19:30';
+usb_sessions(index).date_start = '2020-03-02 00:30';
+usb_sessions(index).date_start = '2020-03-02 08:30';
+usb_sessions(index).date_start = '2020-03-02 11:30';
+usb_sessions(index).date_start = '2020-03-02 16:00';
+
+usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).force_reprocess = true;
+usb_sessions(index).ignore_datetime = {};
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '200221-';
+usb_sessions(index).date_start = '2020-02-21 10:30';
+usb_sessions(index).date_end = '2020-02-27 23:30';
+usb_sessions(index).ignore_datetime = {'2020-02-21 15:00'};
+% usb_sessions(index).rotating_session = false;
+% usb_sessions(index).error_bars = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '200212-200216';
+usb_sessions(index).date_start = '2020-02-12 00:00';
+% usb_sessions(index).date_start = '2020-02-12 11:00';
+% usb_sessions(index).date_start = '2020-02-12 20:00';
+usb_sessions(index).date_end = '2020-02-16 10:30';
+usb_sessions(index).day_session = false;
+usb_sessions(index).y_scale = false;
+usb_sessions(index).ignore_datetime = {'2020-02-12 11:00', '2020-02-13 18:00', '2020-02-15 03:30', ...
+    '2020-02-13 04:30', '2020-02-13 05:00', '2020-02-13 05:30', '2020-02-16 10:00'};
+usb_sessions(index).makeVideo = false;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).minpeakdistance = 60;
+usb_sessions(index).smooth_num_points = 20;
+usb_sessions(index).filterDiskSize = 10;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).saveTxtData = false;
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).removeOutliers = false;
+usb_sessions(index).error_bars = false;
+
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '220805-220815-especial-greaves';
+usb_sessions(index).date_start = '2022-08-05 11:00';
+usb_sessions(index).date_start = '2022-08-06 03:30';
+usb_sessions(index).date_end = '2022-08-15 10:30';
+usb_sessions(index).day_session = false;
+usb_sessions(index).y_scale = false;
+usb_sessions(index).ignore_datetime = {};
+usb_sessions(index).makeVideo = false;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).minpeakdistance = 60;
+usb_sessions(index).smooth_num_points = 20;
+usb_sessions(index).filterDiskSize = 10;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).saveTxtData = false;
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).removeOutliers = false;
+usb_sessions(index).error_bars = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '220706-220706-vidrio-vidrio-aire';
+usb_sessions(index).date_start = '2022-07-04 17:00';
+usb_sessions(index).date_end = '2022-07-06 10:00';
+usb_sessions(index).day_session = false;
+usb_sessions(index).y_scale = false;
+usb_sessions(index).ignore_datetime = {};
+usb_sessions(index).makeVideo = false;
+usb_sessions(index).force_reprocess = true;
+usb_sessions(index).minpeakdistance = 60;
+usb_sessions(index).smooth_num_points = 20;
+usb_sessions(index).filterDiskSize = 10;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).saveTxtData = false;
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).removeOutliers = false;
+usb_sessions(index).error_bars = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '190320-190325-vidrio-aire-reanalisis-220717';
+usb_sessions(index).date_start = '2019-03-20 10:00';
+usb_sessions(index).date_start = '2019-03-20 20:30';
+usb_sessions(index).date_end = '2019-03-25 15:30';
+usb_sessions(index).day_session = false;
+usb_sessions(index).y_scale = false;
+usb_sessions(index).ignore_datetime = {};
+usb_sessions(index).makeVideo = false;
+usb_sessions(index).force_reprocess = true;
+usb_sessions(index).minpeakdistance = 60;
+usb_sessions(index).smooth_num_points = 20;
+usb_sessions(index).filterDiskSize = 10;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).saveTxtData = false;
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).removeOutliers = false;
+usb_sessions(index).error_bars = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '180914-180915-vidrio-aire';
+usb_sessions(index).date_start = '2018-09-14 19:00';
+% usb_sessions(index).date_start = '2018-09-14 21:00';
+usb_sessions(index).date_end = '2018-09-15 19:00';
+usb_sessions(index).day_session = false;
+usb_sessions(index).y_scale = false;
+usb_sessions(index).ignore_datetime = {};
+usb_sessions(index).makeVideo = false;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).minpeakdistance = 60;
+usb_sessions(index).smooth_num_points = 20;
+usb_sessions(index).filterDiskSize = 10;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).saveTxtData = false;
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).removeOutliers = false;
+usb_sessions(index).error_bars = false;
+
+
+index = length(usb_sessions)+1;
 usb_sessions(index).name = '2200702-2200704-aire-vidrio-vidrio';
 usb_sessions(index).date_start = '2022-07-02 17:00';
 usb_sessions(index).date_end = '2022-07-10 14:00';

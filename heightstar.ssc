@@ -7,8 +7,8 @@
 
 //core.debug(core.mapToString(core.getObserverLocationInfo()))
 
-year = "2022"
-month = "07"
+year = "2020"
+month = "03"
 
 local_output_path = "D:\\Users\\an\\experimento-usb-interferometro\\"
 
@@ -51,7 +51,7 @@ for (i=0; i<ciclos; i++)
 	core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"])
 	core.setDate("+"+minutos_medida+" minutes", "UTC")
 	core.wait(0.1);
-break
+//break
 
 	//core.setObserverLocation("Caracas, Venezuela")
 	//obj=core.selectObjectByName("HIP 54589", true)

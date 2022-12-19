@@ -104,6 +104,9 @@ for d=1:length(session_days)
         
         session_datenum = datenum(session(end-10:end), 'yymmdd_HHMM');
         date_start_datenum = datenum(processing_session.date_start);
+        if ~isempty(date_start)
+            date_start_datenum = datenum(date_start);
+        end
         date_end_datenum = datenum(processing_session.date_end);
         
         if session_datenum <  date_start_datenum || ...

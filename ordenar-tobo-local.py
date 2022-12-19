@@ -12,9 +12,9 @@ import time
 import traceback
 
 print("inicio")
-__SOURCE__      =  '../tobo-local'
+__SOURCE__      =  '../reorder-photos'
 # __SOURCE__ = '../tobo-local-duplicates'
-__DESTINATION__ = '../tobo-ordenado'
+__DESTINATION__ = '../reorder-photos'
 
 srcdir = os.path.join(__SOURCE__, '**', '*.jpg')
 # print(srcdir)
@@ -84,10 +84,10 @@ for file in tqdm(files):
 			]
 			for destination in destinations:
 				if not os.path.exists(destination):
-					# shutil.move(src, destination)
-					tqdm.write(f'gotta be moved to {destination}')
-					sys.exit()
-					break
+					# tqdm.write(f'gotta be moved to {destination}')
+					shutil.move(src, destination)
+					# sys.exit()
+					# break
 			else:
 				pass
 				# tqdm.write('. ', end='')

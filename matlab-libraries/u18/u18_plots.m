@@ -369,13 +369,14 @@ end
 % lineaPreferida = 8
 % lineaPreferidaAdjunta = 9
     
-if ~exist('lineaPreferida') || (exist('force_choose_line', 'var') && force_choose_line)
+if ~exist('lineaPreferida', 'var') || (exist('force_choose_line', 'var') && force_choose_line)
     % find column with more values
     
     % calculating length of lines
     length_lines = length(p_adjusted_hampel) - sum(removed_points);
     
     % sort lines by number of points descending
+    length_lines(isnan(length_lines)) = -Inf;
     [sorted_lines, sorted_lines_indices] = sort(length_lines, 'descend');
     
     % six more populates columns
@@ -399,6 +400,7 @@ if ~exist('lineaPreferida') || (exist('force_choose_line', 'var') && force_choos
     if ~found_lines
         fprintf('Did not find adjacent curves. Stop.')
         a=1;
+        return
     end
     
 %     a=1
@@ -471,7 +473,11 @@ if ~exist('lineaPreferida') || (exist('force_choose_line', 'var') && force_choos
 %         lineaPreferida = input(['Especifique el número de curva que desea usar[' int2str(filasRecomendadas(1)) ']: ']);
 %         lineaPreferidaAdjunta = input(['Especifique el número de curva ADJUNTA que desea usar[' int2str(filasRecomendadas(1)) ']: ']);
 %     end
-    
+    if ~exist('lineaPreferida', 'var') 
+        hey =1;
+        fprintf('ERROR? lineaPreferida NOT SET. Returning.')
+        return
+    end
     conf.lineaPreferida = lineaPreferida;
     conf.lineaPreferidaAdjunta = lineaPreferidaAdjunta;
     if strcmp(class(conf), 'table')
@@ -746,14 +752,16 @@ colors = {'r' 'b' 'g' 'y' 'k'};
 
 
 clear XX YY
-[XX, YY] = divideInChunks(xts, pfit, rotation0_locs, 360, orientacion);
+[XX, YY] = divideInChunks(xts, pfit, rotation0_locs, 360, orientacion, processing_session);
 
 if isempty(YY)
     fprintf('Empty YY, not enough rotation data. Neext !\n')
     return
 end
 
-errorsBars=true;
+% errorsBars=true;
+errorBars = processing_session.error_bars;
+a=1;
 
 rotsgroup = 10;
 rotsstep = 10;
@@ -761,7 +769,7 @@ rotsstep = 10;
     ,'groupsize', rotsgroup ...
     ,'groupstep', rotsstep ...
     ,'saveFigures', true ...
-    ,'errorBars', errorsBars ...
+    ,'errorBars', errorBars ...
     ,'plotGroups', true ...
     ,'hampelParams', nan ...
     ,'normalizeBy', separacionFranjas ...
@@ -789,7 +797,7 @@ writeSummary( ...
     ,'groupsize', rotsgroup ...
     ,'groupstep', rotsstep ...
     ,'saveFigures', true ...
-    ,'errorBars', errorsBars ...
+    ,'errorBars', errorBars ...
     ,'plotGroups', true ...
     ,'hampelParams', nan ...
     ,'xts', xts ...

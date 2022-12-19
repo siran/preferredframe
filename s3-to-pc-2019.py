@@ -2,6 +2,7 @@ import os
 import glob
 import subprocess
 from pprint import pprint
+import sys
 from tqdm import tqdm
 import traceback
 import json
@@ -20,8 +21,14 @@ with open(downloaded_sessions_cache_filename, "r") as fp: downloaded_sessions = 
 ## old
 # command_top = f'aws {profile} s3 ls {source_s3}/ | grep 2022-06-2'
 
-command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"2022-06-28"{{print $2}}' | sed 's/^[^0-9].*$//'"""
+# command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"2022-06-28"{{print $2}}' | sed 's/^[^0-9].*$//'"""
+
+DATE_FROM = '2020-02-20'
+DATE_TO = '2020-02-22'
+
+command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"{DATE_FROM}"{{print $2}}' | awk '$1<"{DATE_TO}"{{print $1}}' | sed 's/^[^0-9].*$//'"""
 print(command_top)
+# sys.exit(0)
 directories = subprocess.check_output(command_top, shell=True).decode().split('\n')
 for _directory in tqdm(directories):
     # , desc=f"Directory {_directory.strip()[4:-1]}"

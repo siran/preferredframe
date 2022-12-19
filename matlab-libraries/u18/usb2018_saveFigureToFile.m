@@ -145,7 +145,7 @@ if ~exist('saveFile', 'var') || (exist('saveFile', 'var') && ~isempty(saveFile) 
 %     end    
 
     saveas(gcf, figname);
-    if ~isempty(saveTxtData) && ~isempty(strfind(figname, 'r10s10-normalized'))
+    if ~isempty(saveTxtData) && saveTxtData && ~isempty(strfind(figname, 'r10s10-normalized'))
         h = gcf;
         axesObjs = get(h, 'Children');
         dataObjs = get(axesObjs, 'Children');
