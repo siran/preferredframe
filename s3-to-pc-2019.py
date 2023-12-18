@@ -23,8 +23,8 @@ with open(downloaded_sessions_cache_filename, "r") as fp: downloaded_sessions = 
 
 # command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"2022-06-28"{{print $2}}' | sed 's/^[^0-9].*$//'"""
 
-DATE_FROM = '2020-02-20'
-DATE_TO = '2020-02-22'
+DATE_FROM = '2019-01-20'
+DATE_TO = '2019-01-30'
 
 command_top = f"""aws {profile} s3 ls {source_s3}/ | sed -r 's/\/$//' | sed -r 's/^[ ]*//' | awk '$2>"{DATE_FROM}"{{print $2}}' | awk '$1<"{DATE_TO}"{{print $1}}' | sed 's/^[^0-9].*$//'"""
 print(command_top)

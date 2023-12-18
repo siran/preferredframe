@@ -12,9 +12,9 @@ import time
 import traceback
 
 print("inicio")
-__SOURCE__      =  '../reorder-photos'
+__SOURCE__      =  '../tobo-ordenado'
 # __SOURCE__ = '../tobo-local-duplicates'
-__DESTINATION__ = '../reorder-photos'
+__DESTINATION__ = '../tobo-ordenado'
 
 srcdir = os.path.join(__SOURCE__, '**', '*.jpg')
 # print(srcdir)
@@ -26,6 +26,8 @@ print(f"{len(files)} loaded")
 c=0
 for file in tqdm(files):
 	try:
+		if "2019-" not in file:
+			continue
 		c+=1
 		src = file
 		basename = os.path.basename(src)

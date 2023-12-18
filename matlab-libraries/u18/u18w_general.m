@@ -6,10 +6,10 @@
 clear p x_timestamp xts ps peaks locs p_orig x_timestamp_orig perfiles ...
     lineaPreferida puntosSuavizadoPreferido tt azimuth rotationStop pathToFigures videoId 
 
-warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
-warning('off', 'images:initSize:adjustingMag')
-warning('off', 'MATLAB:audiovideo:VideoWriter:noFramesWritten')
-
+% warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
+% warning('off', 'images:initSize:adjustingMag')
+% warning('off', 'MATLAB:audiovideo:VideoWriter:noFramesWritten')
+warning('off', 'imageio:tifftagsread:expectedTagDataFormat')
 animar = false;
 
 
@@ -77,6 +77,15 @@ for d=1:length(session_days)
             fprintf('Ignorando sesion %s\n', datestr(session_datenum, 'yyyy-mm-dd HH:MM'))
             continue
         end  
+        if isfield(processing_session, 'ignore_date') && ...
+           ~ isempty(find(ismember(...
+                processing_session.ignore_date, ...
+                session_days(d).name), 1)) 
+%             && ...
+%                 datestr(session_datenum, 'yyyy-mm-dd HH:MM') == processing_session.ignore_date
+            fprintf('Ignorando dia %s\n', datestr(session_datenum, 'yyyy-mm-dd'))
+            continue
+        end          
     end
 
 
@@ -98,6 +107,7 @@ for d=1:length(session_days)
             strcmp(session, '.') || ...
             strcmp(session, '..') || ...
             strcmp(session, 'desktop.ini') || ...
+            strcmp(session, 'ignored_images') || ...
             strcmp(session(end-3:end), '.csv')
             continue
         end
@@ -337,11 +347,18 @@ for d=1:length(session_days)
             force_reprocess = processing_session.force_reprocess;
         end
         
+        workspace_loaded = 0;
         if exist(wsname, 'file') && ~force_reprocess
             if ~day_session
-                load(wsname, '-regexp', '^(?!ses|tim|conf|videoId|y_scale|package_name|date_start|date_end|day_session|y_scale|processing_session|pathToFigures)...')
+                try
+                    load(wsname, '-regexp', '^(?!ses|tim|conf|videoId|y_scale|package_name|date_start|date_end|day_session|y_scale|processing_session|pathToFigures)...')
+                    workspace_loaded = 1;
+                catch
+                    workspace_loading_failed=1
+                end
             end
-        else
+        end
+        if workspace_loaded == 0
             onlyLoadConfig = false;
             ignore_folder = false;
             % clear lineaPreferida lineaPreferidaAdjunta

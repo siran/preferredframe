@@ -5,7 +5,7 @@ warning('off', 'images:initSize:adjustingMag')
 warning('off', 'MATLAB:audiovideo:VideoWriter:noFramesWritten')
 warning('off', 'MATLAB:Axes:UnsupportedDataAspectRatio')
 
-path_output = 'D:\Users\an\experimento-usb-interferometro\videos\'
+path_output = 'D:\Users\an\candlelight-experiment\videos';
 % path_images = 'D:\Users\an\experimento-usb-interferometro\tobo-ordenado\2021-02-06\n210206_0930\';
 % videoId = 'n210202_0500'
 

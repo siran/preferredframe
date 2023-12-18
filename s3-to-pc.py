@@ -12,8 +12,8 @@ pictures = os.listdir(destination_dir)
 source_s3 = "s3://anmichel/usb/experimentos/one-way/fotos"
 profile = "--profile eduweb-anrodriguez"
 
-DATE_RANGE_MIN = '2020-05-21'
-DATE_RANGE_MAX = '2020-06-19'
+DATE_RANGE_MIN = '2010-05-21'
+DATE_RANGE_MAX = '2030-06-19'
 
 IGNORE_LAST_DIRECTORY = False
 
@@ -59,6 +59,9 @@ for _directory in tqdm(directories):
             # not transferring the last subdirectory as it might be incomplete
             if _subdirectory == sub_directories[-1] and directory == directories[-1]:
                 break
+
+        if _subdirectory[-4:] == ".jpg":
+            continue
 
         subdirectory = _subdirectory.strip()[4:-1]
 

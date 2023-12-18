@@ -30,7 +30,9 @@ end
         
 if loadfile && exist(altitude_filename, 'file')
     fprintf(['Loading altitude/azimuth for star' star_name '\n'])
-    [numData,textData,rawData] = xlsread(altitude_filename);
+    % [numData,textData,rawData] = xlsread(altitude_filename, 'basic');
+
+    rawData = readcell(altitude_filename);
 
     for r=1:size(rawData)
         t=r;

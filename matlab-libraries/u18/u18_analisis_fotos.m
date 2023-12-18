@@ -4,7 +4,9 @@
 warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
 wspath = 'D:\Users\an\experimento-usb-interferometro\u18_workspaces\';
 
-mkdir([path_images '\ignored_images'])
+if ~exist([path_images '\ignored_images'], "dir")
+    mkdir([path_images '\ignored_images'])
+end
 
 minpeakdistance = 30;
 if isfield(processing_session, 'minpeakdistance') && ~isempty(processing_session.minpeakdistance)
@@ -51,7 +53,7 @@ if (~exist('files_images', 'var'))
         full_name_image = [path_images files_images_raw(t).name];
 
         name_image = files_images_raw(t).name;
-        if isequal(exist([path_images '\ignored_images\' name_image ],'file'),2)
+        if exist([path_images '\ignored_images\' name_image ],'file')
             fprintf('Ignoring file %s\n', name_image)
             continue
         end
@@ -60,16 +62,18 @@ if (~exist('files_images', 'var'))
         
         image_counter = image_counter+1;
         try
-            if t==1
+            if t<3
                 files_images_raw = dir(strcat(path_images,'*.jpg'));
-                info1 = imfinfo([path_images files_images_raw(1).name]);
-                info2 = imfinfo([path_images files_images_raw(2).name]);
-                info3 = imfinfo([path_images files_images_raw(3).name]);
+                info1 = imfinfo([path_images files_images_raw(t).name]);
+                info2 = imfinfo([path_images files_images_raw(t+1).name]);
+                info3 = imfinfo([path_images files_images_raw(t+2).name]);
 
                 % sometimes the first image is rotated 90degress which causes the program
                 % to error out
-                if info1.Width ~=info2.Width && info1.Width ~=info3.Width
-                    copyfile([path_images files_images_raw(1).name], [path_images 'ignored_images'])
+                if info1.Width ~= info2.Width && info1.Width ~=info3.Width && info2.Width == info3.Width
+                    copyfile([path_images files_images_raw(t).name], [path_images 'ignored_images'])
+                    restart = true
+                    continue
                 end
             end
 
@@ -101,7 +105,7 @@ if restart
     new_date_start = datestr(session_datenum,'yyyy-mm-dd HH:MM');
     fprintf('Setting date_start from %s to %s\n', date_start, new_date_start)
     date_start = new_date_start
-    clearvars -except session processing_session date_start date_end day_session session_datenum
+    clearvars -except session processing_session date_start date_end day_session session_datenum ignore_folder
     fprintf('Restarting\n')
     u18w_general
     return
@@ -280,7 +284,7 @@ for i=1:length(files_images)
 %        writetable(conf, fconf);          
 %     end
 
-    [imagen map]= imread(full_name_image);
+    [imagen, map]= imread(full_name_image);
     imagen = rgb2gray(imagen);
 %     imagen = imadjust(imagen);
     imagen = imrotate(imagen, rotationAngle);     
