@@ -93,9 +93,9 @@ for r=1:rotsstep:size(YY,1)
         hampelFile = ['-clean'];
     end    
     
-    YYm(i,:) = nanmean(y{i}, 1);
-    XXm(i) = nanmean(nanmean(x{i}, 2));
-    YYstddev(i,:) = nanstd(y{i}, 0, 1)./sqrt(sum(~isnan(y{i})));
+    YYm(i,:) = mean(y{i}, 1, "omitnan");
+    XXm(i) = mean(mean(x{i}, 2, "omitnan"), "omitnan");
+    YYstddev(i,:) = std(y{i}, 0, 1, "omitmissing")./sqrt(sum(~isnan(y{i})));
 end
 
 normalizedByStr = [];

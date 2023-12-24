@@ -27,12 +27,13 @@ if filasRecomendadas(1) == 1 || (sum(~isnan(padj(:,filasRecomendadas(1)+1))) >= 
 else
     sign = -1;
 end
-separacionFranjas = abs(nanmean(padj(:,lineaPreferidaSeparacionFranja) - padj(:,lineaPreferidaSeparacionFranja+sign)));
+separacionFranjas = abs(mean(padj(:,lineaPreferidaSeparacionFranja) ...
+    - padj(:,lineaPreferidaSeparacionFranja+sign),"omitnan"));
 if separacionFranjas > 55
     separacionFranjas = separacionFranjas/2;
 end
-errorSeparacionFranjas = nanstd(padj(:,lineaPreferidaSeparacionFranja) - padj(:,lineaPreferidaSeparacionFranja+sign)) / ...
-    nanmean(sqrt(abs(padj(:,lineaPreferidaSeparacionFranja) - padj(:,lineaPreferidaSeparacionFranja+sign))));
+errorSeparacionFranjas = std(padj(:,lineaPreferidaSeparacionFranja) - padj(:,lineaPreferidaSeparacionFranja+sign), "omitmissing") / ...
+    mean(sqrt(abs(padj(:,lineaPreferidaSeparacionFranja) - padj(:,lineaPreferidaSeparacionFranja+sign))),"omitnan");
 
 
 plot(xts,padj(:,lineaPreferidaSeparacionFranja), 'x', xts,padj(:,lineaPreferidaSeparacionFranja+sign),'.')
@@ -55,7 +56,7 @@ ylabel('pixel')
 ylabel('tiempo')
 datetick('x','dd/mm HH:MM','keepticks')
 set(gca,'XLim', [startDate endDate])
-set(gca,'YLim', [min(nanmean(restaLineas)/1.4, nanmean(restaLineas)*1.4) max(nanmean(restaLineas)/1.4, nanmean(restaLineas)*1.4)])
+set(gca,'YLim', [min(mean(restaLineas,"omitnan")/1.4, mean(restaLineas, "omitnan")*1.4) max(mean(restaLineas, "omitnan")/1.4, mean(restaLineas, "omitnan")*1.4)])
 saveFigureToFile('separacion-franjas')
 figure
 
