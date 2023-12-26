@@ -5,6 +5,7 @@ recycle('on')
 
 global package_name
 global processing_session
+% global path_images
 
 usb_sessions = struct();
 
@@ -22,6 +23,7 @@ REMOVE_DRIFT = true;
 SAVE_TXT_DATA = false;
 REMOVE_OUTLIERS = false;
 ERROR_BARS = true;
+PCT_VALID_DATA = .3;
 
 load_sessions
 
@@ -95,7 +97,7 @@ for sindex=1:size(process_sessions, 1)
         if ~ strcmp(usb_sessions(uindex).name, process_sessions{sindex,:})
             continue
         end
-        fprintf('\n\nprocesando %s \n', usb_sessions(uindex).name)
+        fprintf('\n\nProcessing package: %s \n', usb_sessions(uindex).name)
 
         processing_session = usb_sessions(uindex);
         if ~isfield(processing_session, 'day_session') || isempty(processing_session.day_session)
@@ -136,7 +138,11 @@ for sindex=1:size(process_sessions, 1)
         end           
         if ~isfield(processing_session, 'error_bars') || isempty(processing_session.error_bars)
             processing_session.error_bars = ERROR_BARS ;
-        end         
+        end
+        if ~isfield(processing_session, 'pct_valid_data') || isempty(processing_session.pct_valid_data)
+            processing_session.pct_valid_data = PCT_VALID_DATA ;
+        end     
+        
         
         
         package_name = processing_session.name;

@@ -8,6 +8,8 @@ if length(x)
     %         'Marker','.','LineStyle','--', 'Color', [1 0 0])
     end
     legend(H, 'Rotation indicator')
-else
-    fprintf('No rotations found, not drawing rotations.\n')
+    
+% else
+    % fprintf('No rotations found, not drawing rotations.\n')
 end
+% fprintf('Drawing %d vertical indicators of rotationrotations.\n', length(x))

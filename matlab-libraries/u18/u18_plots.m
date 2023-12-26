@@ -1,7 +1,8 @@
 global processing_session
+% global orientacion
 
 clear saveFigureToFile
-clear functions
+% clear functions
 
 clear ratio_fringe_separation
 if isfield(processing_session, 'ratio_fringe_separation') && ~isempty(processing_session.ratio_fringe_separation)
@@ -41,10 +42,14 @@ rotating_session = 1;
     
 % orientacion = mod(orientacion - 12.66, 360);
 % [rotation90_pks,rotation90_locs]=findpeaks(sin(orientacion/360*2*pi)       ,x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
-if length(orientacion) ~= length(x_timestamp)
-    return
-end
-[rotation0_pks,rotation0_locs]=  findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
+% if length(orientacion) ~= length(x_timestamp)
+%     return
+% end
+[rotation0_pks,rotation0_locs]=  findpeaks(sin(orientacion/360*2*pi + pi/2), ...
+    x_timestamp,'minpeakdistance', 1/24/60*2.5, ...
+    'MinPeakHeight', 150);
+% , ...
+%     'MinPeakProminence', 100);
 
 fprintf('%d picos de rotacion encontrados. \n', num_rotations);
 numrotaciones = length(rotation0_pks);

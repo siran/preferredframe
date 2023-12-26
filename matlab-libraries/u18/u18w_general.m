@@ -6,49 +6,20 @@
 clear p x_timestamp xts ps peaks locs p_orig x_timestamp_orig perfiles ...
     lineaPreferida puntosSuavizadoPreferido tt azimuth rotationStop pathToFigures videoId 
 
+% global path_images
+
 % warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
 % warning('off', 'images:initSize:adjustingMag')
 % warning('off', 'MATLAB:audiovideo:VideoWriter:noFramesWritten')
 warning('off', 'imageio:tifftagsread:expectedTagDataFormat')
 animar = false;
 
-
-
-% if ~exist('timeAltitude')
-%     fprintf('Leyendo timeAltitude')
-%     readdatetimealt
-% else
-%     fprintf('timeAltitude en memoria')
-% end
-
-% path_sessions = 'D:\Users\an\experimento-usb-interferometro\megasync-data-auto-proc\';
-% path_sessions = 'D:\Users\an\experimento-usb-interferometro\auto-proc\'
-
-% datelimit = '2020-03-09'
-% hourlimit = '2130'
-% hourlimitc = '21:30'
-
-% datelimit_end = '2020-03-10'
-% hourlimit_end = '19:30'
-
-% maxdatetime = [datelimit_end ' ' hourlimit_end];
-% mindatetime = [datelimit ' ' hourlimitc];
-
-
-% day_session = false;
-
-% robert
-% day_session = true;
-
-% base_output_path = 'G:\My Drive\preferred-frame\usb-one-way'
-% session_days_path = [base_output_path '\fotos-sesiones\'];
-
 base_output_path = 'D:\Users\an\experimento-usb-interferometro';
 session_days_path = [base_output_path '\tobo-ordenado\'];
 
 session_days = dir(session_days_path);
 % ordeno por fecha
-[tmp ind]=sort({session_days.name});
+[tmp, ind]=sort({session_days.name});
 session_days = session_days(ind);
 
 for d=1:length(session_days)
@@ -93,14 +64,12 @@ for d=1:length(session_days)
     path_sessions = [session_days_path  day '\'];
     sessionsx = dir(path_sessions);
 
-    % ordeno por fecha
+    % ordeno sesiones por fecha
     [tmp ind]=sort({sessionsx.name});
     sessionsx = sessionsx(ind);
 %     day_session = true;
 
     for s=1:length(sessionsx)
-    % for s=1:length(sessionsx)
-    
         session = sessionsx(s).name;
    
         if  ~sessionsx(s).isdir  || ...
@@ -188,10 +157,11 @@ for d=1:length(session_days)
         
         path_images = [path_sessions session '\'];    
         
+        % TODO: if it is a "day session" the idea is to load all pics, from
+        % all folders of the date in the array; this used to work in the
+        % past
         if day_session
             session = day;
-            
-%             videoId = ['wday-' session '-' datestr(datenum(date_end), 'yyyymmdd_hhMM')];
             videoId = ['wday' '-' datestr(datenum(date_start), 'yyyymmdd') ...
                               '-' datestr(datenum(date_end), 'yyyymmdd') ...
                               '-' session];

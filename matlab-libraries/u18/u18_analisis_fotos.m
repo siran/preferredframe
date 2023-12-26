@@ -1,7 +1,11 @@
 % Determine the maxima of an interference pattern
 % From all pictures in a folder
 
+warning('off', 'MATLAB:declareGlobalBeforeUse')
+% global path_images session
+
 warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
+warning('off', 'signal:findpeaks:largeMinPeakHeight')
 wspath = 'D:\Users\an\experimento-usb-interferometro\u18_workspaces\';
 
 if ~exist([path_images '\ignored_images'], "dir")
@@ -124,7 +128,8 @@ if ~isempty(invalid_elements)
     x_timestamp(invalid_index+1) = (x_timestamp(invalid_index) + ...
         x_timestamp(invalid_index+2))/2;
 end
-[rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp);
+[rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),...
+    "MinPeakHeight", 150);
 
 num_rotations = length(rotation0_pks);
 
@@ -224,11 +229,13 @@ if processing_session.makeVideo
     open(outputVideo);
 end
 
+num_no_fringes_img = 0;
+
 for i=1:length(files_images)
     fila = fila +1;
 
     name_image = files_images(i).name;
-    if strfind(name_image, '\')
+    if contains(name_image, '\')
         full_name_image = name_image;
     else
         full_name_image = strcat(path_images, name_image);
@@ -332,9 +339,21 @@ for i=1:length(files_images)
     end
     
 %     try
+        npeaks = length(peaks);
+        if npeaks < 3 && fila > .3*length(p)
+            pct_valid_data = 1-min(sum(isnan(p)))/length(p);                
+            if pct_valid_data < processing_session.pct_valid_data
+                fprintf('\n\n***\nLess than %2.2f of data seems to be valid... returning.\n***\n\n', ... 
+                    processing_session.pct_valid_data)
+                ignore_folder = true;
+                % plot(p,'.')
+                return
+            end
 
-        
-        if length(peaks) >= 3
+            perfiles(fila,:,:) = nan(1, size(perfiles(fila-1,:,:),2));
+            p(fila,1:length(locs)) = nan(1,length(locs)); % locs;          
+            continue
+        elseif length(peaks) >= 3
             try
                 perfiles(fila,:,:) = perfil;        
             catch
