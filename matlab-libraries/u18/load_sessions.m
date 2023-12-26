@@ -2,9 +2,11 @@ index = length(usb_sessions)+1;
 % redoing session, same name different start date
 usb_sessions(index).name = '2020-02-27--2020-03-24--paper-2';
 usb_sessions(index).date_start = '2020-02-27';
-usb_sessions(index).date_start = '2020-02-28 22:30';
+usb_sessions(index).date_start = '2020-02-28 23:30';
+usb_sessions(index).date_start = '2020-02-29 18:00';
 usb_sessions(index).date_end = '2020-03-25';
-usb_sessions(index).force_reprocess = true;
+usb_sessions(index).date_end = '2020-03-08 17:00';
+usb_sessions(index).force_reprocess = false;
 usb_sessions(index).saveTxtData = true ;
 
 index = length(usb_sessions)+1;
