@@ -65,7 +65,7 @@ for d=1:length(session_days)
     sessionsx = dir(path_sessions);
 
     % ordeno sesiones por fecha
-    [tmp ind]=sort({sessionsx.name});
+    [tmp, ind]=sort({sessionsx.name});
     sessionsx = sessionsx(ind);
 %     day_session = true;
 
@@ -110,7 +110,7 @@ for d=1:length(session_days)
         end        
         fprintf('Procesando %s\n', datestr(session_datenum, 'yyyy-mm-dd HH:MM'))
         
-        if strcmp(session, '.day_session')
+        if strcmp(session, '.day_session') || processing_session.day_session
             day_session = true;
         end
      
@@ -157,7 +157,7 @@ for d=1:length(session_days)
         
         path_images = [path_sessions session '\'];    
         
-        % TODO: if it is a "day session" the idea is to load all pics, from
+        % TODO: if it isfiles a "day session" the idea is to load all pics, from
         % all folders of the date in the array; this used to work in the
         % past
         if day_session
@@ -176,12 +176,15 @@ for d=1:length(session_days)
                 clear files_images
                 for folder_i = 1:length(sessions_in_folder)
                     session_in_folder = sessions_in_folder(folder_i).name;
-                    if strcmp(session_in_folder(1), '.') || ~isdir([path_sessions session_in_folder])
+                    folder_name = sessions_in_folder(folder_i).folder;
+                    if strcmp(session_in_folder(1), '.') || ...
+                            ~isdir(folder_name) || ...
+                            strcmp(session_in_folder, 'ignored_images')
                         continue
                     end
                     
                     % leo archivos
-                    path_session_folder = [path_sessions session_in_folder '\'];
+                    path_session_folder = [folder_name '\' session_in_folder '\'];
                     if exist([path_session_folder 'skip'], 'file') || exist([path_session_folder '.skip'], 'file')
                         continue
                     end                
@@ -194,7 +197,7 @@ for d=1:length(session_days)
                         fprintf('Muy pocos archivos: %d, videoid: %s\n', maxfiles, path_session_folder_images)
                         continue
                     end 
-                    
+                    %  aqui
                     info = imfinfo([path_session_folder pictures(1).name]);
                     date = info.DigitalCamera.DateTimeOriginal;
                     picture_datestr = datetime(date,'InputFormat','yyyy:MM:dd H:m:s');
@@ -210,6 +213,7 @@ for d=1:length(session_days)
 %                     if pictures(1).datenum > ()
  
                     for pics_i = 1:length(pictures)
+                        pictures(pics_i).name_orig = pictures(pics_i).name;
                         pictures(pics_i).name = [path_session_folder pictures(pics_i).name];
                     end
                     if ~exist('files_images', 'var')
@@ -222,17 +226,19 @@ for d=1:length(session_days)
 %                     break
 %                 end
               
-                % ordeno por fecha
-                size_files_images = length(files_images);
-                fprintf('Sorting %d files in %s\n', size_files_images, path_sessions)
-                for t=1:size_files_images
-                    full_name_image = files_images(t).name;
-                    info = imfinfo(full_name_image);
-                    date = info.DigitalCamera.DateTimeOriginal;
-                    files_images(t).datenum = datenum(datetime(date,'InputFormat','yyyy:MM:dd H:m:s'));
-                end
-                [tmp ind]=sort([files_images.datenum]);
-                files = files_images(ind);
+                % % ordeno por fecha
+                % size_files_images = length(files_images);
+                % % fprintf('Sorting %d files in %s\n', size_files_images, path_sessions)
+                % fprintf('Adding datenum from exif to %d files\n', size_files_images)
+                % for t=1:size_files_images
+                %     full_name_image = files_images(t).name;
+                %     info = imfinfo(full_name_image);
+                %     date = info.DigitalCamera.DateTimeOriginal;
+                %     files_images(t).datenum = datenum(datetime(date,'InputFormat','yyyy:MM:dd H:m:s'));
+                % end
+                % [tmp ind]=sort([files_images.datenum]);
+                % files = files_images(ind);
+                files = files_images;
             end
         else
             files=dir([path_images '*.jpg']);
@@ -319,14 +325,14 @@ for d=1:length(session_days)
         
         workspace_loaded = 0;
         if exist(wsname, 'file') && ~force_reprocess
-            if ~day_session
+            % if ~day_session
                 try
                     load(wsname, '-regexp', '^(?!ses|tim|conf|videoId|y_scale|package_name|date_start|date_end|day_session|y_scale|processing_session|pathToFigures)...')
                     workspace_loaded = 1;
                 catch
                     workspace_loading_failed=1
                 end
-            end
+            % end
         end
         if workspace_loaded == 0
             onlyLoadConfig = false;
@@ -335,8 +341,8 @@ for d=1:length(session_days)
 
             u18_analisis_fotos
             if ignore_folder
-%                 fprintf('Moving folder to %s\n', path_sessions_not_used)
-%                 movefile(path_images, path_sessions_not_used)
+                % fprintf('Moving folder to %s\n', path_sessions_not_used)
+                % movefile(path_images, path_sessions_not_used)
                 continue
             end
         % u18_makevideo
@@ -347,10 +353,10 @@ for d=1:length(session_days)
         % lineaPreferidaAdjunta=3;
         suavizar=false;
         ajustarDefault = true;
-        if day_session
-            ajustarDefault = false;
-        end
-%         ajustarDefault = false;
+        % if day_session
+        %     ajustarDefault = false;
+        % end
+        % ajustarDefault = false;
         force_choose_line = true;
         % saveLogFile('init')
         graficoAzimuth = true;

@@ -46,10 +46,18 @@ function [ adjusteddata ] = adjustdata( data, varargin )
     start = 1;
     global xts
    
-    for tiempo = 2 : size(data, 1)
-%         if tiempo == 105
-%             stop=1;
-%         end
+    tini=tic;
+    tend = length(data);
+    for tiempo = 2 : tend
+        if (mod(tiempo,100)==0)
+            elapsed = toc(tini)/60;
+            total = tend*elapsed/tiempo;
+            faltante = (total-elapsed);
+            if ((total-elapsed) < 1)
+                faltante = (total-elapsed)*60;
+            end
+            fprintf('%d/%d - %6.1f - total est.: %4.2f min, transcurridos: %4.2f min, faltante: %4.2f min \n', tiempo, tend, round(tiempo/tend,2), total, elapsed, faltante);
+        end  
 
         % avgStepsBack has to be greater than 1
         % then we average last avgStepsBack        

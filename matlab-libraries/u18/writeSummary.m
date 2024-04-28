@@ -2,7 +2,6 @@ function writeSummary(varargin)
 % write a summary file for session
 
 summary_path = 'D:\Users\an\experimento-usb-interferometro\analysis-summaries\';
-filename = 'summaryv2.csv';
 
 nVarargs = length(varargin);
 for k = 1:2:nVarargs
@@ -75,22 +74,35 @@ for j=1:size(YY,1)
     summary(i).max = maxv;
     summary(i).min = minv;
 
-    star_altitude = 0;
     if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
-        star_altitude = pchip(timeAltitude(:,1), timeAltitude(:,2), XX(j));
+        % Loop though all stellar object
+        stars = {'HIP54589', 'Sun', 'Moon'};
+        for starname_i = 1:length(stars)
+            fieldname = ['altitude_' stars{starname_i}];
+            summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,2,starname_i), XX(j));
+            if size(timeAltitude,2) > 3
+                fieldname = ['distance_km_to_' stars{starname_i}];
+                summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j));                
+            end
+            % timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
+            % timeAltitude(t,2,starname_i)=rawData{r,5}; % equatorial altitude
+            % timeAltitude(t,3,starname_i)=rawData{r,4}; % equatorial azimuth
+            % 
+            % star_altitude = pchip(timeAltitude(:,1), timeAltitude(:,2), XX(j));
+        end
     end
 
     summary(i).fringe_separation_session = fringe_separation;    
     if YYstddev ~= 0
         summary(i).amplitude_error = abs(YYstddev(imaxv)) + abs(YYstddev(iminv));
     end
-    summary(i).average_altitude = star_altitude;
-    summary(i).average_altitude = star_altitude;
-    if strfind(sessionId,'norm')
+    % summary(i).average_altitude = star_altitude;
+    
+    if contains(sessionId,'norm')
         summary(i).figure_type = 'normalized';
-    elseif strfind(sessionId,'inde')
+    elseif contains(sessionId,'inde')
         summary(i).figure_type = 'independientes';
-    elseif strfind(sessionId,'-no-rotation')
+    elseif contains(sessionId,'-no-rotation')
         summary(i).figure_type = 'no-rotation';        
     else 
         summary(i).figure_type = '';

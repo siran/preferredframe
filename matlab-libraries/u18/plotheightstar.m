@@ -13,7 +13,7 @@ if exist('timeAltitude') && ~isempty(timeAltitude)
     ax.YTick = [-90 -80:20:80 90];
     
     vertical_steps = -90:180/20:90;
-    ylabel('Altitude of star (°, blue line)')
+    ylabel('Altitude of stellar objects')
 
     if ax.XLim == [0 360]
         altitudes = pchip(timeAltitude(:,1), timeAltitude(:,2), ...
@@ -25,8 +25,14 @@ if exist('timeAltitude') && ~isempty(timeAltitude)
         plot(0:360, altitudes, 'b-', 'lineWidth', 3)
         plot(azimuths, vertical_steps,'b-', 'lineWidth', 3)                  
     else
-        plot(timeAltitude(:,1),timeAltitude(:,2),'b.-','lineWidth',3)
+        colors = {'b','y','k'};
+        stars = {'HIP54589', 'Sun', 'Moon'};
+        for starname_i = 1:size(timeAltitude,3)
+            plot(timeAltitude(:,1, starname_i),timeAltitude(:,2, starname_i),[colors{starname_i} '.-'],'lineWidth',3)
+        end
+        legend([stars])
     end
+    % legend([{'Fringe shift'}, stars])
     yyaxis left
     if holdStatus
         hold on

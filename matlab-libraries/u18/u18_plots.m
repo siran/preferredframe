@@ -4,10 +4,11 @@ global processing_session
 clear saveFigureToFile
 % clear functions
 
-clear ratio_fringe_separation
+clear ratio_fringe_separation numfig
 if isfield(processing_session, 'ratio_fringe_separation') && ~isempty(processing_session.ratio_fringe_separation)
     ratio_fringe_separation = processing_session.ratio_fringe_separation;
 end
+
 % processing_session
 % if ~isfield(processing_session, 'saveTxtData') || (isfield(processing_session, 'saveTxtData') && isempty(processing_session.saveTxtData))
     saveTxtData = processing_session.saveTxtData;
@@ -15,14 +16,20 @@ end
 
 close(gcf)
 
+set(groot,'defaultAxesColorOrder','default')
+
 xts = x_timestamp';
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % setting plot x limits by substracting the fractional part over :00 or :30 min
 x_start = xts(1) - mod(xts(1), 1/48);
 x_end = x_start + 1/48;
+if processing_session.day_session
+    x_start = floor(xts(1));
+    x_end = ceil(xts(end));
+end
 
-% xlim([x_start x_end])
+% xlim([x_start x_rotating_sessionend])
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % fprintf('Data: %s - %s \n', datestr(x_start), datestr(x_end))
@@ -45,9 +52,29 @@ rotating_session = 1;
 % if length(orientacion) ~= length(x_timestamp)
 %     return
 % end
-[rotation0_pks,rotation0_locs]=  findpeaks(sin(orientacion/360*2*pi + pi/2), ...
-    x_timestamp,'minpeakdistance', 1/24/60*2.5, ...
-    'MinPeakHeight', 150);
+
+% checking for rotations
+if min(orientacion) < 150 && max(orientacion) > 250
+    rotationsFound = true;
+else
+    rotationsFound = false;
+    fprintf('\nWARNING: no rotations detected. Some plots will not be made.\n\n')
+end
+
+rotation0_pks = [];
+rotation0_locs = [];
+if ~isfield(processing_session, 'rotating_sessions')
+    processing_session.rotating_session = true;
+end
+if rotationsFound && processing_session.rotating_session
+    % Remove non-finite values from orientacion
+    % orientacion = orientacion(isfinite(orientacion));
+    % Remove non-finite values from x_timestamp
+    % x_timestamp = x_timestamp(isfinite(x_timestamp));
+
+    [rotation0_pks,rotation0_locs]=  findpeaks(sin(orientacion/360*2*pi + pi/2), ...
+        x_timestamp,'minpeakdistance', 1/24/60*2.5);
+end
 % , ...
 %     'MinPeakProminence', 100);
 
@@ -56,12 +83,7 @@ numrotaciones = length(rotation0_pks);
 
 % tm=xts;
 
-if min(orientacion) < 150 && max(orientacion) > 250
-    rotationsFound = true;
-else
-    rotationsFound = false;
-    fprintf('\nWARNING: no rotations detected. Some plots will not be made.\n\n')
-end
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -123,11 +145,8 @@ p = p_orig;
 
 % hold off
 % figure
-
-
-
-startDate = x_timestamp(1);
-endDate = x_timestamp(end); %datenum(files_images(size(p,1)).date);
+% startDate = x_timestamp(1);
+% endDate = x_timestamp(end); %datenum(files_images(size(p,1)).date);
 
 % yyaxis left
 % if length(xts) ~= length(p)
@@ -138,13 +157,17 @@ plot(xts, p, '.')
 title({'Displacement of Interference Maxima vs Time (raw)', ['from ' datestr(x_start) ' to ' datestr(x_end)]},'FontSize', 16);
 ylabel('Displacement of Maxima (px)');
 
-% set(gca,'XMinorTick','on')
-% grid on
-% datetick('x', 'dd/mm HH:MM')
-% xlabel('Date-time (dd/mm HH:MM)')
-% ax = gca;
-% ax.XTickLabelRotation = 90;
-% hold on
+set(gca,'XMinorTick','on')
+grid on
+datetick('x', 'dd/mm HH:MM')
+xlabel('Date-time (dd/mm HH:MM)')
+ax = gca;
+ax.XTickLabelRotation = 90;
+plotheightstar
+%     xlim([x_start x_end])
+config_plot
+%     ylim([0 1600])
+usb2018_saveFigureToFile('maxima-displacement-raw')
 
 % continuar = input(['Do you want to continue with other plot? 1/0: ']);
 % if continuar == 0
@@ -160,9 +183,9 @@ ylabel('Displacement of Maxima (px)');
 %         'Marker','.','LineStyle','--', 'Color', [1 0 0])
 % end
 % legend('Maxima displacement - raw', 'Rotation indicator')
-if exist('day_session') && day_session
-    nothing=0;
-else
+% if exist('day_session') && day_session
+%     nothing=0;
+% else
 %     if exist('session_duration_min', 'var')
 %        
 %         % substracting the fractional part over :00 or :30 min
@@ -171,41 +194,44 @@ else
 %         
 %         xlim([x_start x_end])
 %     end
-end
-ylimites = ylim();
-ylimdiff = diff(ylimites);
-if exist('day_session') && day_session
-    hours_limits = [0 2 4 6 8 12 14 16 18 20 22 24];
-    if y_scale
-        yyaxis left
-        ymin = max(ylim())/3;
-        ymax = ymin*2;
-%         ylim([ymin ymax])        
-        ylim([600 800])        
-    end
-    for hl=1:length(hours_limits)-1        
-        x_start = floor(xts(1)) + hours_limits(hl)/24;
-        
-%         x_end = floor(xts(1)) + hours_limits(hl+1)/24
-        x_end = x_start + 1/12;
-        if ~ length(xts(xts >= x_start & xts < x_end));
-            continue
+% end
+
+
+if processing_session.day_session 
+    make_plots=false;
+    if make_plots
+        if y_scale
+            yyaxis left
+            ymin = max(ylim())/3;
+            ymax = ymin*2;
+    %         ylim([ymin ymax])        
+            ylim([600 800])        
         end
-        
-        xlim([x_start x_end])
-        set(gca,'XTick', [x_start:1/48:x_end])
-        datetick('x', 'dd/mm HH:MM', 'keepticks')
-        
-        fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
-        title(['Displacement of Interference Maxima: from ' ...
-            datestr(x_start) ' to ' ...
-            datestr(x_end)],'FontSize', 16);
-        plotheightstar
-        closeFigure = hl==(length(hours_limits)-1);
-        usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
-            'closeFigure', closeFigure)
-    end
+    
+        hours_limits = [0 4 8 12 16 20 24];
+        for hl=1:length(hours_limits)-1        
+            x_start = floor(xts(1)) + hours_limits(hl)/24;
             
+    %         x_end = floor(xts(1)) + hours_limits(hl+1)/24
+            x_end = x_start + 1/12;
+            if ~ length(xts(xts >= x_start & xts < x_end));
+                continue
+            end
+            
+            xlim([x_start x_end])
+            set(gca,'XTick', [x_start:1/48:x_end])
+            datetick('x', 'dd/mm HH:MM', 'keepticks')
+            
+            fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
+            title(['Displacement of Interference Maxima: from ' ...
+                datestr(x_start) ' to ' ...
+                datestr(x_end)],'FontSize', 16);
+            plotheightstar
+            closeFigure = hl==(length(hours_limits)-1);
+            usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
+                'closeFigure', closeFigure)
+        end
+    end
 else
     ax = gca;
     draw_rotations(rotation0_locs, ylim, ax)
@@ -225,33 +251,46 @@ else
     ajustar = ajustarDefault;
 end
 
-clear p_adjusted_orig
-if ~exist('p_adjusted_orig', 'var') && (exist('ajustar', 'var') && ( ajustar == true || strcmp(ajustar, 's')))
-%     if ~exist('backInTime')
-%         backInTime = 1;
-%     end
-%     if ~exist('maxHeightDifference')
-%         maxHeightDifference = 80;
-%         if ~isfield(table2struct(conf), 'maxHeightDifference')
-%             conf.maxHeightDifference = maxHeightDifference ;
-%             writetable(conf, fconf);          
-%         end
-%     end    
-%     maxHeightDifference = 25;
-%     backInTime = 1;
-    if exist('ratio_fringe_separation', 'var')
-        p_adjusted_orig = usb2018_adjustdata(p_orig, 'ratio_fringe_separation', ratio_fringe_separation);
-    else 
-        p_adjusted_orig = usb2018_adjustdata(p_orig);
+% clear p_adjusted_orig
+if processing_session.ajustar || (exist('ajustar', 'var') && ajustar == true)
+    try
+        load([wspath videoId '-adjusted_orig'])
+    catch
+        % all ok
+    end  
+    if exist('p_adjusted_orig', 'var')
+        p_adjusted = p_adjusted_orig;
+        p = p_adjusted;
+        padj = p_adjusted;
+    elseif ~exist('p_adjusted_orig', 'var')
+      
+        % % if ~exist('backInTime')
+        % %     backInTime = 1;
+        % % end
+        % % if ~exist('maxHeightDifference')
+        % %     maxHeightDifference = 80;
+        % %     if ~isfield(table2struct(conf), 'maxHeightDifference')
+        % %         conf.maxHeightDifference = maxHeightDifference ;
+        % %         writetable(conf, fconf);          
+        % %     end
+        % % end    
+        % % maxHeightDifference = 25;
+        % % backInTime = 1;
+        fprintf("Trying to join points into fringes... might take a while the first time.\n")
+        tic;
+        if exist('ratio_fringe_separation', 'var')
+            p_adjusted_orig = usb2018_adjustdata(p_orig, 'ratio_fringe_separation', ratio_fringe_separation);
+        else 
+            p_adjusted_orig = usb2018_adjustdata(p_orig);
+        end
+        toc
+        p_adjusted = p_adjusted_orig;
+        p = p_adjusted;
+        % plot(p)
+        padj = p_adjusted;
+        fprintf(['Saving workspace variables to file... ' wspath videoId '-ajustada'])
+        save([wspath videoId '-adjusted_orig'], 'p_adjusted_orig')
     end
-    p_adjusted = p_adjusted_orig;
-    p = p_adjusted;
-%     plot(p)
-    padj = p_adjusted;
-elseif exist('p_adjusted_orig', 'var')
-    p_adjusted = p_adjusted_orig;
-    p = p_adjusted;
-    padj = p_adjusted;        
 else
     p = p_orig;
     p_adjusted = p_orig;
@@ -263,89 +302,56 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Grafico inicial (lineas separadas)
 
-% figure
-% startDate = x_timestamp(1);
-% endDate = x_timestamp(end); %datenum(files_images(size(p,1)).date);
-
-% yyaxis left
-if length(xts) ~= length(p)
-    stop=1;
-end
 plot(xts, p, '.')
 
-title({'Displacement of Interference Maxima vs Time', ['from ' datestr(x_start) ' to ' datestr(x_end)]},'FontSize', 16);
-ylabel('Displacement of Maxima (px)');
-
-% set(gca,'XMinorTick','on')
-% grid on
-% datetick('x', 'dd/mm HH:MM')
-% xlabel('Date-time (dd/mm HH:MM)')
-% ax = gca;
-% ax.XTickLabelRotation = 90;
-config_plot
-
-hold on
-
-% continuar = input(['Do you want to continue with other plot? 1/0: ']);
-% if continuar == 0
-%     return
-% end
-
-if exist('day_session') && day_session
-    nothing=0;
+if processing_session.day_session
+    title(['Displacement of Interference Maxima vs Time on ' datestr(x_start)],'FontSize', 16);    
 else
-%     if exist('session_duration_min', 'var')
-%        
-%         % substracting the fractional part over :00 or :30 min
-%         x_start = xts(1) - mod(xts(1), 1/48);
-%         x_end = x_start + 1/48;
-%         
-%         xlim([x_start x_end])
-%     end
+    title({'Displacement of Interference Maxima vs Time', ['from ' datestr(x_start) ' to ' datestr(x_end)]},'FontSize', 16);
 end
-% ylimites = ylim();
-% ylimdiff = diff(ylimites);
-if exist('day_session') && day_session
-    hours_limits = [0 2 4 6 8 12 14 16 18 20 22 24];
-    if y_scale
-        yyaxis left
-        ymin = max(ylim())/3;
-        ymax = ymin*2;
-%         ylim([ymin ymax])        
-        ylim([600 800])        
-    end
-    for hl=1:length(hours_limits)-1
-
-        
-%         x_start = floor(xts(1)) + hours_limits(hl)/24
-%         
-% %         x_end = floor(xts(1)) + hours_limits(hl+1)/24
-%         x_end = x_start + 1/12;
-%         if ~ length(xts(xts >= x_start & xts < x_end))
-%             continue
-%         end
-        
-        xlim([x_start x_end])
-        set(gca,'XTick', [x_start:1/48:x_end])
-        datetick('x', 'dd/mm HH:MM', 'keepticks')
-        
-        fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
-        title({ ...
-            'Displacement of Interference Maxima',  ...
-            ['from ' datestr(x_start) ...
-               'to ' datestr(x_end)]},'FontSize', 16);
-        plotheightstar
-        closeFigure = hl==(length(hours_limits)-1);
-        usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
-            'closeFigure', closeFigure)
-    end
-            
-else
-    plotheightstar
+ylabel('Displacement of Maxima (px)');
+config_plot
+plotheightstar
+if ~(processing_session.day_session || exist('day_session', 'var') && day_session)
     draw_rotations(rotation0_locs, ylim, ax)
     config_plot
-    usb2018_saveFigureToFile('maxima-displacement')
+else
+    % make_plots=false;
+    % if make_plots
+    % hours_limits = [0 2 4 6 8 12 14 16 18 20 22 24];
+    % if y_scale
+    %     yyaxis left
+    %     ymin = max(ylim())/3;
+    %     ymax = ymin*2;
+    %     % ylim([ymin ymax])        
+    %     ylim([600 800])        
+    % end
+    % for hl=1:length(hours_limits)-1
+    %     % x_start = floor(xts(1)) + hours_limits(hl)/24
+    %     % 
+    %     % % x_end = floor(xts(1)) + hours_limits(hl+1)/24
+    %     % x_end = x_start + 1/12;
+    %     % if ~ length(xts(xts >= x_start & xts < x_end))
+    %     %     continue
+    %     % end
+    % 
+    %     xlim([x_start x_end])
+    %     set(gca,'XTick', [x_start:1/48:x_end])
+    %     datetick('x', 'dd/mm HH:MM', 'keepticks')
+    % 
+    %     fprintf('plot from %s to %s\n', datestr(x_start), datestr(x_end))
+    %     title({ ...
+    %         'Displacement of Interference Maxima',  ...
+    %         ['from ' datestr(x_start) ...
+    %            'to ' datestr(x_end)]},'FontSize', 16);
+    %     plotheightstar
+    %     closeFigure = hl==(length(hours_limits)-1);
+    %     usb2018_saveFigureToFile(['maxima-displacement' '-' int2str(hours_limits(hl))], ...
+    %         'closeFigure', closeFigure)
+    % end
+    % end        
 end
+usb2018_saveFigureToFile('maxima-displacement', 'saveTxtData', saveTxtData)
 
 if ~exist('ajustar', 'var') || ~ajustar
     fprintf('Curves not being adjusted. End of plotting.')
@@ -534,10 +540,12 @@ ylabel('Fringe displacement (px)')
 % set(gca,'XMinorTick','on')  
 
 config_plot
-if exist('day_session') && day_session
-    xlim([floor(xts(1)) floor(xts(1))+1])
+% if exist('day_session') && day_session
+    % xlim([floor(xts(1)) floor(xts(1))+1])
+% end
+if ~processing_session.day_session
+    draw_rotations(rotation0_locs, ylim, ax)
 end
-draw_rotations(rotation0_locs, ylim, ax)
 usb2018_saveFigureToFile('fringes_for_difference')
 
 % if exist('puntosSeparacionFranjas')
@@ -576,7 +584,7 @@ restaLineas = p_adjusted_hampel(:,lineaPreferida) - p_adjusted_hampel(:,lineaPre
 % restaLineas = hampel(restaLineas);
 plot(xts, restaLineas,'gX')
 hold on
-plot(xts, smooth(restaLineas,20),'x')
+% plot(xts, smooth(restaLineas,20),'x')
 title({'Separation between fringes ', ...
     ['d=' num2str(separacionFranjas) '+- ' num2str(errorSeparacionFranjas) 'px'], ...
     'standard error given by stddev(points)/sqrt(#points)'} ...
@@ -604,12 +612,15 @@ ylim([min(restaLineas)-5 max(restaLineas)+5])
 %     xlim([x_start x_end])
 % end
 ax = gca;
-draw_rotations(rotation0_locs, ylim, ax)
+if ~processing_session.day_session
+    draw_rotations(rotation0_locs, ylim, ax)
+end
+% draw_rotations(rotation0_locs, ylim, ax)
 config_plot
 usb2018_saveFigureToFile('separacion-franjas')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-if ~exist('rotating_session', 'var') || ~rotating_session
+if ~rotationsFound
     fprintf('\nWARNING: This is not a rotating session.\n\n')
 
     writeSummary( ...
@@ -622,11 +633,15 @@ if ~exist('rotating_session', 'var') || ~rotating_session
         ,'fringe_separation', separacionFranjas ...
         ,'xts', xts ...
         ,'timeAltitude', timeAltitude ...
-    );    
+        ,'timeRange', [x_start x_end] ...
+        ,'filename', processing_session.name ...
+    );      
     
     return    
 end
-
+if processing_session.day_session
+    return
+end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Ajuste
 % [fitresult, gof] = fit((1:size(p_adjusted_hampel_pref,1))',p_adjusted_hampel_pref,'smoothingspline');
@@ -659,7 +674,10 @@ legend('Original data', 'Moving average fit (120 points, 2 rotations')
 % ylimdiff = diff(ylimites);
 config_plot
 plotheightstar
-draw_rotations(rotation0_locs, ylim, ax)
+if ~processing_session.day_session
+    draw_rotations(rotation0_locs, ylim, ax)
+end
+% draw_rotations(rotation0_locs, ylim, ax)
 usb2018_saveFigureToFile('ajuste')
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -668,7 +686,7 @@ usb2018_saveFigureToFile('ajuste')
 % Resta de ajuste
 
 if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
-    pfit=p_adjusted_hampel_pref - fitresult(1:size(p_adjusted_hampel_pref));    
+    pfit=p_adjusted_hampel_pref - fitresult(1:size(p_adjusted_hampel_pref,1));    
 else
     pfit=p_adjusted_hampel_pref;    
 end
@@ -722,12 +740,17 @@ plotheightstar
 if ~isempty(processing_session.remove_drift) && processing_session.remove_drift
     ylim([-100 100])
 end
-draw_rotations(rotation0_locs, ylim, ax)
+if ~processing_session.day_session
+    draw_rotations(rotation0_locs, ylim, ax)
+end
+% draw_rotations(rotation0_locs, ylim, ax)
 usb2018_saveFigureToFile('ajustada')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Analisis de rotaciones
+
+
 
 if ~rotationsFound
     fprintf('\nWARNING: no rotations detected. No analysis of rotation will be done.\n\n')

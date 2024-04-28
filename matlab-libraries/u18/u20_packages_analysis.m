@@ -10,7 +10,6 @@ global processing_session
 usb_sessions = struct();
 
 % % DEFAULTS
-DAY_SESSION = false;
 Y_SCALE = false;
 IGNORE_FOLDER = {};
 IGNORE_DATETIME = {};
@@ -23,7 +22,10 @@ REMOVE_DRIFT = true;
 SAVE_TXT_DATA = false;
 REMOVE_OUTLIERS = false;
 ERROR_BARS = true;
-PCT_VALID_DATA = .3;
+PCT_VALID_DATA = 0;
+DAY_SESSION = false;
+AJUSTAR = true;
+ROTATING_SESSION = true;
 
 load_sessions
 
@@ -83,7 +85,12 @@ process_sessions = {
 %     '191016-191125'
 %     '200221-200228-partial-reprocesss--req-edo'
     % '2021-04--req-edo'
-    '2020-02-27--2020-03-24--paper-2'
+    % '2020-02-27--2020-03-24--paper-2'
+    % '2020-02-27--2020-03-24--paper-2-day_session'
+    % '200221-200228-partial-reprocesss--req-edo-day_session'
+    % '200225-200226-partial-reprocesss--req-edo-day_session-sun,moon'
+    % '200226-partial-reprocesss--req-edo-day_session-sun,moon'
+    '200210-200303-fig6-sun-moon-cmbr'
 
 };
 
@@ -141,7 +148,17 @@ for sindex=1:size(process_sessions, 1)
         end
         if ~isfield(processing_session, 'pct_valid_data') || isempty(processing_session.pct_valid_data)
             processing_session.pct_valid_data = PCT_VALID_DATA ;
-        end     
+        end
+        if ~isfield(processing_session, 'day_session') || isempty(processing_session.day_session)
+            processing_session.day_session = DAY_SESSION ;
+        end
+        if ~isfield(processing_session, 'ajustar') || isempty(processing_session.ajustar)
+            processing_session.ajustar = AJUSTAR ;
+        end
+        if ~isfield(processing_session, 'rotating_session') || isempty(processing_session.rotating_session)
+            processing_session.ajustar = ROTATING_SESSION ;
+        end
+        
         
         
         

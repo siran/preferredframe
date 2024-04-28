@@ -8,101 +8,113 @@ warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
 warning('off', 'signal:findpeaks:largeMinPeakHeight')
 wspath = 'D:\Users\an\experimento-usb-interferometro\u18_workspaces\';
 
-if ~exist([path_images '\ignored_images'], "dir")
-    mkdir([path_images '\ignored_images'])
-end
+minpeakdistance = processing_session.minpeakdistance;
+smooth_num_points = processing_session.smooth_num_points;
+filterDiskSize = processing_session.filterDiskSize;
 
-minpeakdistance = 30;
-if isfield(processing_session, 'minpeakdistance') && ~isempty(processing_session.minpeakdistance)
-    minpeakdistance = processing_session.minpeakdistance;
-end
+fprintf('Reading directory: %s\n', session );
+fprintf('Extracting compass and other info from exif data...\n')
 
-smooth_num_points = 20;
-if isfield(processing_session, 'minpeakdistance') && ~isempty(processing_session.minpeakdistance)
-    smooth_num_points = processing_session.smooth_num_points;
-end
 
-filterDiskSize = 5;
-if isfield(processing_session, 'filterDiskSize') && ~isempty(processing_session.filterDiskSize)
-    filterDiskSize = processing_session.filterDiskSize;
-end
-
-if isfield(processing_session, 'rotating_session') && ~isempty(processing_session.filterDiskSize)
-    rotating_session = processing_session.rotating_session;
-end
-
-fprintf('Procesando directorio: %s \n\n', session );
-fprintf('Scanning goodness of files...\n')
-
-% scan goodness of files
 restart = false;
+exif_fname = [wspath videoId '-exif'];
+try
+    load(exif_fname)
+catch
+    % all good
+end
 
-if (~exist('files_images', 'var'))   
-    % leo archivos
-    files_images_raw = dir(strcat(path_images,'*.jpg'));
+maxfiles = 0;
+
+% filling files_images struct array
+% extracting compass orientation from exif
+if ~exist('files_images', 'var') || ~exist('x_timestamp', 'var')
+    if exist('files', 'var') && processing_session.day_session
+        files_images_raw = files;
+    else
+        % leo archivos
+        files_images_raw = dir(strcat(path_images,'*.jpg'));
+    end
+
     maxfiles = length(files_images_raw);
-    
     if maxfiles < 100
         fprintf('Muy pocos archivos: %d, videoid: %s\n', maxfiles, videoId)
         return
     end
+
+    % for dummy = 1:maxfiles
+    %     files_images_raw(dummy).name = files(dummy).name_orig;
+    % end
     
     stepFrames=1;
 
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %% ordeno por fecha
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
     image_counter = 0;
-    for t=1:size(files_images_raw)
-        full_name_image = [path_images files_images_raw(t).name];
 
-        name_image = files_images_raw(t).name;
-        if exist([path_images '\ignored_images\' name_image ],'file')
-            fprintf('Ignoring file %s\n', name_image)
-            continue
+    files_images = files_images_raw;
+    x_timestamp = nan(size(files_images_raw));
+    orientacion = nan(size(files_images_raw));
+    tini=tic;
+    for t=1:length(files_images_raw)
+        if (mod(t,100)==0)
+            elapsed = toc(tini)/60;
+            total = maxfiles*elapsed/t;
+            faltante = (total-elapsed);
+            if ((total-elapsed) < 1)
+                faltante = (total-elapsed)*60;
+            end
+            fprintf('%d/%d - %6.1f - total est.: %4.2f min, transcurridos: %4.2f min, faltante: %4.2f min \n', t, maxfiles, round(t/maxfiles,2), total, elapsed, faltante);
+        end         
+        if t==1863
+            stop=1
         end
-        
-
-        
         image_counter = image_counter+1;
-        try
+        % try
+            % sometimes the first image is rotated 90degress which causes the program
+            % to error out            
             if t<3
-                files_images_raw = dir(strcat(path_images,'*.jpg'));
-                info1 = imfinfo([path_images files_images_raw(t).name]);
-                info2 = imfinfo([path_images files_images_raw(t+1).name]);
-                info3 = imfinfo([path_images files_images_raw(t+2).name]);
-
-                % sometimes the first image is rotated 90degress which causes the program
-                % to error out
+                info1 = imfinfo([files_images_raw(t).folder '\' files_images_raw(t).name]);
+                info2 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+1).name]);
+                info3 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+2).name]);
                 if info1.Width ~= info2.Width && info1.Width ~=info3.Width && info2.Width == info3.Width
-                    copyfile([path_images files_images_raw(t).name], [path_images 'ignored_images'])
+                    movefile([files_images_raw(t).folder '\'  files_images_raw(t).name], [files_images_raw(t).folder '\' 'ignored_images'])
                     restart = true
-                    continue
+                    break
                 end
             end
 
-            info = imfinfo([path_images files_images_raw(t).name]);
+            name_image = files_images_raw(t).name;
+            full_name_ignored_image = [files_images_raw(t).folder '\ignored_images\' name_image ];
+            if exist(full_name_ignored_image, 'file')
+                fprintf('Ignoring file %s\n', name_image)
+                % deletex(full_name_ignored_image)
+                continue
+            end
+
+            info = imfinfo([files_images_raw(t).folder '\' files_images_raw(t).name]);
             date = info.DigitalCamera.DateTimeOriginal;
-            files_images(image_counter) = files_images_raw(t);
+            % files_images(image_counter) = files_images_raw(t);
             files_images(image_counter).datenum = datenum(date,'yyyy:mm:dd HH:MM:SS');
             x_timestamp(image_counter) = files_images(image_counter).datenum;
             orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
-        catch
-            fprintf('Invalid file %s, renaming... \n', full_name_image)
-%             delete(full_name_image)
-            movefile(full_name_image, [full_name_image '-invalid'])
-            restart = true
-            continue
-        end
+            
+        % catch
+        %     full_name_image = [files_images_raw(t).folder '\' files_images_raw(t).name];
+        %     fprintf('Invalid file %s, renaming... \n', full_name_image)
+        %     % delete(full_name_image)
+        %     assert(1==0, 'Why is the file invalid?')
+        %     movefile(full_name_image, [full_name_image '-invalid'])
+        %     restart = true
+        %     continue
+        % end
         
-    end
+    end    
+    save(exif_fname, "orientacion",'x_timestamp','files_images')
     orientacion_orig = orientacion;
-    [tmp, ind]=sort([files_images.datenum]);
-    files_images = files_images(ind);
-    x_timestamp = x_timestamp(ind);
+    % [tmp, ind]=sort([files_images.datenum]);
+    % files_images = files_images(ind);
+    % x_timestamp = x_timestamp(ind);
 end
-
-maxfile = length(files_images);
 
 % restarting if files were deleted
 if restart
@@ -115,40 +127,27 @@ if restart
     return
 end
 
-p = nan(length(files_images),20);
-%     orientacion = nan(length(1:stepFrames:maxfiles), 1 );
-%     x_timestamp = nan(length(1:stepFrames:maxfiles), 1 );
-
 % [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),                                           'MinPeakHeight', 0.95);
 % [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),x_timestamp,'minpeakdistance',1/24/60*2.5, 'MinPeakHeight', 0.95);
 
-invalid_elements = find(diff(x_timestamp)<=0,1,'first');
-if ~isempty(invalid_elements)
-    invalid_index = invalid_elements(1);
-    x_timestamp(invalid_index+1) = (x_timestamp(invalid_index) + ...
-        x_timestamp(invalid_index+2))/2;
-end
-[rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),...
-    "MinPeakHeight", 150);
-
-num_rotations = length(rotation0_pks);
-
-if num_rotations < 5
-    if exist('rotating_session', 'var') && ~isempty(rotating_session) || ~exist('rotating_session', 'var')
+% invalid_elements = find(diff(x_timestamp)<=0,1,'first');
+% if ~isempty(invalid_elements)
+%     invalid_index = invalid_elements(1);
+%     x_timestamp(invalid_index+1) = (x_timestamp(invalid_index) + ...
+%         x_timestamp(invalid_index+2))/2;
+% end
+num_rotations = 0;
+if processing_session.rotating_session
+    [rotation0_pks,rotation0_locs] = findpeaks(sin(orientacion/360*2*pi + pi/2),...
+        "MinPeakHeight", 0.95);
+    
+    num_rotations = length(rotation0_pks);
+    if processing_session.rotating_session && num_rotations < 5
         fprintf('Not enough rotations %s\n', videoId)
         ignore_folder = true;
         return
     end
-end
- 
-% orientacion = zeros(maxfiles(1),1);
-% x_timestamp = zeros(maxfiles(1),1);
-
-t=0;
-tini=tic;
-fila=0;
-warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
-
+end 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Determine angle of rotation
@@ -157,53 +156,48 @@ warning('off', 'MATLAB:imagesci:tifftagsread:expectedTagDataFormat')
 clear sum_image max_sum_image num_im_peaks rotationAngle
 
 name_image = files_images(1).name;
-full_name_image = strcat(path_images, name_image);
+full_name_image = strcat(files_images(1).folder, '\', name_image);
 [imagen, map]= imread(full_name_image);
 imagen = rgb2gray(imagen);
 imagen = imadjust(imagen);
 imagen = imfilter(imagen,fspecial('disk', filterDiskSize));
 
 % 1. sum the image for every angle
-angulos = 0:95;
+angulos = -95:95;
 a=0;
 indice =0;
 for angulo=angulos
     a = a + 1;
     rotated_image = imrotate(imagen, angulo);
     perfil = smooth(double(sum(rotated_image)), smooth_num_points);
-    [peaks,locs] = findpeaks(perfil, 'MinPeakDistance',minpeakdistance,'MinPeakProminence',1e3); 
+
+    % [peaks,locs] = findpeaks(perfil, 'MinPeakDistance',minpeakdistance,'MinPeakProminence',1e3); 
+    [peaks,locs] = findpeaks(perfil, 'MinPeakDistance',minpeakdistance); 
 
     if length(peaks) > 3
         num_peaks(a) = length(peaks);
         max_sum_image(a) = max(sum(perfil));
         
-%         %%% visualize peaks and rotation
-%         subplot(1,3,1)
-%         hold off
-%         plot(perfil)
-%         hold on
-%         plot(locs, peaks,'o')
-%         title(int2str(angulo))
-%         subplot(1,3,2)
-%         hold off
-%         plot(hampel(max_sum_image),'o')
-%         subplot(1,3,3)
-%         hold off
-%         imshow(rotated_image)
-%         drawnow()
-%         title(['Rotation angle: ' int2str(angulo)])
-%         hold off
-%         set(gcf,'units','normalized','outerposition',[0 0 1 1]);        
+        % %%% visualize peaks and rotation
+        % subplot(1,3,1)
+        % hold off
+        % plot(perfil)
+        % hold on
+        % plot(locs, peaks,'o')
+        % title(int2str(angulo))
+        % subplot(1,3,2)
+        % hold off
+        % plot(hampel(max_sum_image),'o')
+        % subplot(1,3,3)
+        % hold off
+        % imshow(rotated_image)
+        % drawnow()
+        % title(['Rotation angle: ' int2str(angulo)])
+        % hold off
+        % set(gcf,'units','normalized','outerposition',[0 0 1 1]);        
     end
 
 
-end
-subplot(1,1,1)
-
-if ~exist('num_peaks')
-    fprintf('Not enough peaks found. Returning.\n')
-    ignore_folder = true;
-    return
 end
 
 [Y,I] = sort(num_peaks, 2, 'descend');
@@ -214,13 +208,7 @@ if length(indices_max_count_peaks) > 1
     [Yx, Ix] = max(max_sum_image);  
     I = indices_max_count_peaks(Ix);
 end
-
 rotationAngle = angulos(I(1));
-    
-datenum_ini = files_images(1).datenum;
-x_start = datenum_ini - mod(datenum_ini, 1/48);
-x_end = x_start + 1/48;
-
 
 if processing_session.makeVideo
     video_path_output = 'D:\Users\an\experimento-usb-interferometro\videos\';
@@ -229,90 +217,75 @@ if processing_session.makeVideo
     open(outputVideo);
 end
 
+t=0;
+tini=tic;
+fila=0;
+maxfiles = length(files_images);
+datenum_ini = files_images(1).datenum;
+x_start = datenum_ini - mod(datenum_ini, 1/48);
+x_end = x_start + 1/48;
 num_no_fringes_img = 0;
+perfiles = nan(maxfiles, size(imagen,2));
+p = nan(length(files_images),20);
 
-for i=1:length(files_images)
+for i=1:maxfiles
     fila = fila +1;
-
     name_image = files_images(i).name;
+    folder_image = files_images(i).folder;
     if contains(name_image, '\')
         full_name_image = name_image;
     else
-        full_name_image = strcat(path_images, name_image);
-    end   
+        full_name_image = [folder_image '\' name_image];
+    end
+
+    if exist([folder_image '\ignored_images\' name_image ], 'file')
+        fprintf('Ignoring file %s\n', name_image)
+        continue
+    end
     
     if ~exist('lastI', 'var') || (mod((i - lastI),100)==0)
         elapsed = toc(tini)/60;
-        total = (maxfiles(1)*elapsed/i);
+        total = (maxfiles*elapsed/i);
         faltante = (total-elapsed);
         if ((total-elapsed) < 1)
             faltante = (total-elapsed)*60;
         end
-        fprintf('%d/%d - %6.1f - total est.: %4.2f min, transcurridos: %4.2f min, faltante: %4.2f min \n', i, maxfiles(1), round(i/maxfiles(1)*10000)/100, total, elapsed, faltante);
+        fprintf('%d/%d - %6.1f - total est.: %4.2f min, transcurridos: %4.2f min, faltante: %4.2f min \n', i, maxfiles, round(i/maxfiles*10000)/100, total, elapsed, faltante);
         lastI = i;
     end    
-    if (i==332)
-            a=1;
-    end
- 
 
-%     if ~isfield(table2struct(conf), 'minY')
-%         minY = 1;
-%     end
-%     if ~isfield(table2struct(conf),'maxY')
-%         maxY = size(imagen,1);        
-%     end   
-
-%     imagen = imagen(minY:maxY, :);
-    
-%     if isfield(table2struct(conf), 'rotationAngle')
-%         rotationAngle = conf.rotationAngle;
-%     else
-%        if exist('rotationStop', 'var') && rotationStop 
-%            angle = 0;
-%            imshow(imrotate(imagen, angle))
-%            while true
-%                answer = input('input a rotation angle and press Enter (rotationAngle):');
-%                  answer =[];
-%                if isempty(answer)               
-%                    break
-%                end
-%                angle = answer;
-%                imshow(imrotate(imagen, angle))
-%            end
-%            rotationAngle = angle;
-% %         else
-%             
-% %             angle=0;
-% %             rotationAngle = angle;
-%        end
-%         
-%        conf.rotationAngle = rotationAngle;
-%        writetable(conf, fconf);          
-%     end
+    % if ~isfield(table2struct(conf), 'minY')
+    %     minY = 1;
+    % end
+    % if ~isfield(table2struct(conf),'maxY')
+    %     maxY = size(imagen,1);        
+    % end   
+    % 
+    % imagen = imagen(minY:maxY, :);
 
     [imagen, map]= imread(full_name_image);
     imagen = rgb2gray(imagen);
-%     imagen = imadjust(imagen);
-    imagen = imrotate(imagen, rotationAngle);     
-    imagen = imfilter(imagen,fspecial('disk', filterDiskSize));
+    imagen = imadjust(imagen);
+    imagen = imrotate(imagen, rotationAngle, 'nearest', 'crop');     
+    imagen = imfilter(imagen,fspecial('disk', filterDiskSize), 'same');
     
-    perfil_intensidad = sum(imagen');
+    perfil_intensidad = sum(imagen, 1);
+    perfil = perfil_intensidad;
     [Y,I] = max(perfil_intensidad);
-    if ~exist('max_intensity_row')
-        max_intensity_row = I;
-    end
-    perfil = imagen(I,:);
-    perfil = double(perfil);
-       
-    perfil = smooth(perfil, smooth_num_points);
-    
-    [peaks,locs] = findpeaks(perfil, 'MinPeakDistance', minpeakdistance);
+    [peaks,locs] = findpeaks(perfil_intensidad, 'MinPeakDistance', minpeakdistance);
+    % if ~exist('max_intensity_row')
+    %     max_intensity_row = I;
+    % end
+    % perfil = imagen(I,:);
+    % perfil = double(perfil);
+    % 
+    % perfil = smooth(perfil, smooth_num_points);
+    % 
+    % [peaks,locs] = findpeaks(perfil, 'MinPeakDistance', minpeakdistance);
     
     textPosition = 'bottom';
     if ~exist('figureCreated', 'var') || figureCreated==false
         
-        xts(1) = x_timestamp(1);
         imshow(imread(full_name_image))
         axis on
         xlabel('Width of original image (px)')
@@ -346,7 +319,7 @@ for i=1:length(files_images)
                 fprintf('\n\n***\nLess than %2.2f of data seems to be valid... returning.\n***\n\n', ... 
                     processing_session.pct_valid_data)
                 ignore_folder = true;
-                % plot(p,'.')
+                plot(p,'.')
                 return
             end
 
@@ -362,16 +335,8 @@ for i=1:length(files_images)
                 continue
             end
             p(fila,1:length(locs)) = locs;        
-%         elseif size(perfiles,2) ~= length(perfil)
-%             perfiles(fila,:,:) = nan(1, size(perfiles(fila-1,:,:),2));
-%             p(fila,1:length(locs)) = nan(1,length(locs)); % locs;          
-%         else
-%             perfiles(fila,:,:) = perfil;        
-%             p(fila,1:length(locs)) = nan(1:length(locs)); % locs;          
-%             continue
-    %         perfiles(fila,:,:) = perfiles(fila-1,:,:);
-    %         p(fila, :) = p(fila-1, :);                
-    %         continue;
+        else
+            few_peaks=1    
         end
         if processing_session.makeVideo
             if ~exist('maximized', 'var') || ~maximized
@@ -382,8 +347,8 @@ for i=1:length(files_images)
                 ax = gca;
                 height_profile = ax.YLim(2);
                 perfil_xlim = [0 size(imagen,2)]
-%                 [rotation90_pks,rotation90_locs]=findpeaks(sin(orientacion/360*2*pi),'minpeakdistance',30, 'MinPeakHeight', 0.95);
-%                 [rotation0_pks,rotation0_locs]=findpeaks(sin(orientacion/360*2*pi + pi/2),'minpeakdistance',30, 'MinPeakHeight', 0.95);
+                % [rotation90_pks,rotation90_locs]=findpeaks(sin(orientacion/360*2*pi),'minpeakdistance',30, 'MinPeakHeight', 0.95);
+                % [rotation0_pks,rotation0_locs]=findpeaks(sin(orientacion/360*2*pi + pi/2),'minpeakdistance',30, 'MinPeakHeight', 0.95);
             end
             subplot(2,2,2)
                
