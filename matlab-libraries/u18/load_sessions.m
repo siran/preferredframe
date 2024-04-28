@@ -1,5 +1,97 @@
 index = length(usb_sessions)+1;
 % redoing session, same name different start date
+usb_sessions(index).name = '200210-200303-fig6-sun-moon-cmbr';
+usb_sessions(index).date_start = '2020-02-10 15:30';
+
+usb_sessions(index).date_start = '2020-02-14 16:30';
+usb_sessions(index).date_start = '2020-02-15 15:00';
+usb_sessions(index).date_start = '2020-02-19 09:00';
+
+
+
+% % commented 2024-03-07
+% usb_sessions(index).date_start = '2020-02-12 01:30';
+% usb_sessions(index).date_start = '2020-02-12 23:30';
+% usb_sessions(index).date_start = '2020-02-13 03:00';
+% usb_sessions(index).date_start = '2020-02-17 17:00';
+% usb_sessions(index).date_start = '2020-02-25 14:30';
+
+
+% usb_sessions(index).date_start= '2020-02-22 01:00';
+% usb_sessions(index).date_start= '2020-02-22 18:30';
+% usb_sessions(index).date_start= '2020-02-23 00:30';
+% usb_sessions(index).date_start= '2020-02-23 06:30';
+
+usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).ignore_datetime = {'2020-02-10 15:30', '2020-02-14 16:30', ...
+    '2020-02-15 15:00', ...
+    '2020-02-15 15:30', ...
+    '2020-02-15 15:30', ...
+    '2020-02-17 15:00', '2020-02-17 15:30','2020-02-17 16:00',...
+    '2020-02-17 16:30','2020-02-17 17:00','2020-02-17 17:30'};
+
+
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = '200226-partial-reprocesss--req-edo-day_session-sun,moon';
+usb_sessions(index).date_start= '2020-02-26';
+usb_sessions(index).date_end = '2020-02-27';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).saveTxtData = false ;
+usb_sessions(index).day_session = true ;
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).rotating_session = false;
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = '200225-200226-partial-reprocesss--req-edo-day_session-sun,moon';
+usb_sessions(index).date_start= '2020-02-25';
+usb_sessions(index).date_end = '2020-02-26';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).saveTxtData = false ;
+usb_sessions(index).day_session = true ;
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).rotating_session = false;
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = '200221-200228-partial-reprocesss--req-edo-day_session';
+usb_sessions(index).date_start = '2020-02-21';
+% usb_sessions(index).date_start = '2020-02-12 01:30';
+% usb_sessions(index).date_start = '2020-02-12 23:30';
+% usb_sessions(index).date_start = '2020-02-13 03:00';
+% usb_sessions(index).date_start = '2020-02-17 17:00';
+% usb_sessions(index).date_start = '2020-02-25 14:30';
+% usb_sessions(index).date_start= '2020-02-22 01:00';
+% usb_sessions(index).date_start= '2020-02-22 18:30';
+% usb_sessions(index).date_start= '2020-02-23 00:30';
+usb_sessions(index).date_start= '2020-02-23 06:30';
+usb_sessions(index).date_end = '2020-02-28';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).saveTxtData = false ;
+usb_sessions(index).day_session = true ;
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).ignore_datetime = {'2020-02-17 15:00', '2020-02-17 15:30','2020-02-17 16:00',...
+    '2020-02-17 16:30','2020-02-17 17:00','2020-02-17 17:30'};
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = '2020-02-27--2020-03-24--paper-2-day_session';
+usb_sessions(index).date_start = '2020-03-05';
+% usb_sessions(index).date_start = '2020-02-29 18:30';
+usb_sessions(index).date_end = '2020-03-08 17:00';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).saveTxtData = false ;
+usb_sessions(index).day_session = true ;
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).rotating_session = false;
+
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
 usb_sessions(index).name = '2020-02-27--2020-03-24--paper-2';
 usb_sessions(index).date_start = '2020-02-27';
 usb_sessions(index).date_start = '2020-02-28 23:30';
