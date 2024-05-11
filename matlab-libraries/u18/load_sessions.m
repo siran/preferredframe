@@ -3,9 +3,9 @@ index = length(usb_sessions)+1;
 usb_sessions(index).name = '200210-200303-fig6-sun-moon-cmbr';
 usb_sessions(index).date_start = '2020-02-10 15:30';
 
-usb_sessions(index).date_start = '2020-02-14 16:30';
-usb_sessions(index).date_start = '2020-02-15 15:00';
-usb_sessions(index).date_start = '2020-02-19 09:00';
+% usb_sessions(index).date_start = '2020-02-14 16:30';
+% usb_sessions(index).date_start = '2020-02-15 15:00';
+% usb_sessions(index).date_start = '2020-02-19 09:00';
 
 
 

@@ -30,7 +30,7 @@ if exist('timeAltitude') && ~isempty(timeAltitude)
         for starname_i = 1:size(timeAltitude,3)
             plot(timeAltitude(:,1, starname_i),timeAltitude(:,2, starname_i),[colors{starname_i} '.-'],'lineWidth',3)
         end
-        legend([stars])
+        legend(ax, [stars])
     end
     % legend([{'Fringe shift'}, stars])
     yyaxis left
