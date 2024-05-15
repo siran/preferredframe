@@ -1,5 +1,5 @@
 % plot height of star
-if exist('timeAltitude') && ~isempty(timeAltitude)
+if false && exist('timeAltitude') && ~isempty(timeAltitude)
     holdStatus = ishold;
     hold on
     ax = gca;

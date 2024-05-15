@@ -232,15 +232,16 @@ if processing_session.day_session
                 'closeFigure', closeFigure)
         end
     end
-else
-    ax = gca;
-    draw_rotations(rotation0_locs, ylim, ax)
-    plotheightstar
-%     xlim([x_start x_end])
-    config_plot
-%     ylim([0 1600])
-    usb2018_saveFigureToFile('maxima-displacement-raw')
-end
+end    
+% else
+%     ax = gca;
+%     draw_rotations(rotation0_locs, ylim, ax)
+%     plotheightstar
+% %     xlim([x_start x_end])
+%     config_plot
+% %     ylim([0 1600])
+%     usb2018_saveFigureToFile('maxima-displacement-raw')
+% end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Separar lineas
@@ -789,6 +790,7 @@ end
 % errorsBars=true;
 errorBars = processing_session.error_bars;
 a=1;
+quicker = true;
 
 rotsgroup = 10;
 rotsstep = 10;
@@ -819,6 +821,8 @@ writeSummary( ...
     ,'timeAltitude', timeAltitude ...
     ,'filename', processing_session.name ...
 );
+
+if ~quicker
 
 [XXm, YYm, YYstddev] = plotInGroups(XX, YY ...
     ,'groupsize', rotsgroup ...
@@ -877,3 +881,4 @@ writeSummary( ...
     ,'filename', processing_session.name ...
 );
 
+end

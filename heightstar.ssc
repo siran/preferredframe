@@ -36,23 +36,16 @@ ciclos = nmeses*diasmes*horasdia*medidashora
 //ciclos = 2
 
 ///////////////////////// don't modify below this line
-
-core.setPlanetocentricCalculations(true)
-
 output_fname = output_path + "heightstar-"+object_info+"-"+year + "-" + month + ".csv"
-core.selectObjectByName(object_info, true);
-map=core.getObjectInfo(object_info)
-
-core.resetOutput()
 core.setObserverLocation(observer_location)
+core.selectObjectByName(object_info, true);
 core.setDate(year + "-" + month + "-01T00:00:00", "UTC")
-core.debug("distance")
-core.debug(map["Distance"])
-core.debug("---")
+core.setPlanetocentricCalculations(false)
+
 core.debug("Coordinates of star "+object_info+" (times are in UTC) in "+observer_location+":");
-core.debug(core.mapToString(map))
 //core.exit()
 
+core.resetOutput()
 for (i=0; i<ciclos; i++)
 {
 	map=core.getObjectInfo(object_info)
@@ -60,15 +53,6 @@ for (i=0; i<ciclos; i++)
 	core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
 	core.setDate("+"+minutos_medida+" minutes", "UTC")
 	core.wait(0.1);
-//break
-
-	//core.setObserverLocation("Caracas, Venezuela")
-	//obj=core.selectObjectByName("HIP 54589", true)
-	//map=core.getSelectedObjectInfo()
-	//core.debug(core.mapToString(map))
-	//core.debug(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"])
-	//core.debug(date)
-
 }
 core.saveOutputAs(output_fname)
 core.debug("fin")

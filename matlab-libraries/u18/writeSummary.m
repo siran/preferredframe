@@ -74,24 +74,6 @@ for j=1:size(YY,1)
     summary(i).max = maxv;
     summary(i).min = minv;
 
-    if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
-        % Loop though all stellar object
-        stars = {'HIP54589', 'Sun', 'Moon'};
-        for starname_i = 1:length(stars)
-            fieldname = ['altitude_' stars{starname_i}];
-            summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,2,starname_i), XX(j));
-            if size(timeAltitude,2) > 3
-                fieldname = ['distance_km_to_' stars{starname_i}];
-                summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j));                
-            end
-            % timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
-            % timeAltitude(t,2,starname_i)=rawData{r,5}; % equatorial altitude
-            % timeAltitude(t,3,starname_i)=rawData{r,4}; % equatorial azimuth
-            % 
-            % star_altitude = pchip(timeAltitude(:,1), timeAltitude(:,2), XX(j));
-        end
-    end
-
     summary(i).fringe_separation_session = fringe_separation;    
     if YYstddev ~= 0
         summary(i).amplitude_error = abs(YYstddev(imaxv)) + abs(YYstddev(iminv));
@@ -108,6 +90,32 @@ for j=1:size(YY,1)
         summary(i).figure_type = '';
     end
     summary(i).average_position = (maxv + minv)/2;
+
+    if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
+        % Loop though all stellar object
+        stars = {'HIP54589', 'Sun', 'Moon'};
+        masses = [nan, 1.98885E30, 7.3477E22];
+        G = 0.000000000066743;
+        c_light=3e9;
+        
+        for starname_i = 1:length(stars)
+            fieldname = ['altitude_' stars{starname_i}];
+            summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,2,starname_i), XX(j));
+            if size(timeAltitude,2) > 3
+                fieldname = ['c_cure_' stars{starname_i}];
+                distance_m = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j))*10^3;
+                mass_i = masses(starname_i);
+                c_cure = 1/(G*mass_i^2/(8*pi*distance_m^4));
+
+                summary(i).(fieldname) = c_cure;
+            end
+            % timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
+            % timeAltitude(t,2,starname_i)=rawData{r,5}; % equatorial altitude
+            % timeAltitude(t,3,starname_i)=rawData{r,4}; % equatorial azimuth
+            % 
+            % star_altitude = pchip(timeAltitude(:,1), timeAltitude(:,2), XX(j));
+        end
+    end    
 end
     
 writetable(struct2table(summary), filename);
