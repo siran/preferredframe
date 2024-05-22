@@ -5,10 +5,8 @@
 
 // Made on Stellarium 0.16.1
 
-//core.debug(core.mapToString(core.getObserverLocationInfo()))
-
-year = "2020"
-month = "03"
+years = ["2020"]
+months = ["02","05","06","11"]
 
 local_output_path = "D:\\Users\\an\\experimento-usb-interferometro\\"
 
@@ -16,12 +14,8 @@ dir_name = "height-star"
 
 output_path = local_output_path + "\\" + dir_name + "\\"
 
-// star name
-object_info = "HIP54589"
-object_info = "Sun"
-object_info = "Moon"
-//object_info = "Earth"
-
+// stars
+object_infos = ["HIP54589","Sun","Moon"]
 
 observer_location = "Caracas, Venezuela"
 
@@ -29,32 +23,63 @@ observer_location = "Caracas, Venezuela"
 nmeses = 1
 diasmes = 31
 horasdia = 24
-medidashora = 3
+medidashora = 2
 minutos_medida = 60 / medidashora
 
-ciclos = nmeses*diasmes*horasdia*medidashora
-//ciclos = 2
+/// test
+//diasmes = 2
 
-///////////////////////// don't modify below this line
-output_fname = output_path + "heightstar-"+object_info+"-"+year + "-" + month + ".csv"
+ciclos = nmeses*diasmes*horasdia*medidashora
+//ciclos = 5
+
+////////////////// don't need to modify below this line ////////////////////////
+
 core.setObserverLocation(observer_location)
-core.selectObjectByName(object_info, true);
-core.setDate(year + "-" + month + "-01T00:00:00", "UTC")
 core.setPlanetocentricCalculations(false)
 
-core.debug("Coordinates of star "+object_info+" (times are in UTC) in "+observer_location+":");
+//core.selectObjectByName(object_info, true);
+//core.setDate(year + "-" + month + "-01T00:00:00", "UTC")
+//map=core.getObjectInfo(object_info)
+//core.debug(core.mapToString(map))
+//core.debug("Coordinates of star "+object_info+" (times are in UTC) in "+observer_location+":");
+
 //core.exit()
 
-core.resetOutput()
-for (i=0; i<ciclos; i++)
-{
-	map=core.getObjectInfo(object_info)
-	date = core.getDate()
-	core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
-	core.setDate("+"+minutos_medida+" minutes", "UTC")
-	core.wait(0.1);
+waittime = 0.05
+
+core.debug("Times are in UTC");
+for (k=0; k<object_infos.length; k++) {
+	for (y=0; y<years.length; y++) {
+		for (j=0; j<months.length; j++) {
+			year = years[y]
+			month = months[j]
+			object_info = object_infos[k]
+			output_fname = "heightstar-"+object_info+"-"+year + "-" + month + ".csv"
+
+			core.selectObjectByName(object_info, true);
+			core.setDate(year + "-" + month + "-01T00:00:00", "UTC")
+
+			core.debug(object_info + ": " + year + "-" + month)
+
+			core.wait(waittime);
+			core.resetOutput()
+			for (i=0; i<ciclos; i++) {
+				date = core.getDate()
+				map=core.getObjectInfo(object_info)
+				core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
+				if (i == 0) {
+					core.debug("TEST LINE: " + date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
+				}
+				if (i % 100 == 0) {
+					core.debug(object_info + ": " + year + "-" + month + " - " + i + "/" + ciclos )
+				}
+				core.setDate("+"+minutos_medida+" minutes", "UTC")
+				core.wait(waittime);
+
+			}
+			core.saveOutputAs(output_fname)
+		}
+	}
 }
-core.saveOutputAs(output_fname)
 core.debug("fin")
-
-
+core.debug("Times are in UTC, Location was set in " + observer_location);
