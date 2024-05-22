@@ -1,28 +1,67 @@
 index = length(usb_sessions)+1;
+usb_sessions(index).name = '200601-200630-req-edo';
+usb_sessions(index).date_start = '2020-06-01 00:00';
+usb_sessions(index).date_start = '2020-06-01 18:00';
+usb_sessions(index).date_start = '2020-06-09 13:00';
+usb_sessions(index).date_start = '2020-06-19 12:00';
+usb_sessions(index).ignore_datetime = {'2020-06-01 18:00', '2020-06-09 13:00','2020-06-19 12:00'};
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).date_end = '2020-06-30 23:30';
+usb_sessions(index).force_reprocess = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '201121-201124-fig8-sun-moon-cmbr-sessions';
+usb_sessions(index).date_start = '2020-11-21 00:00';
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+% usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).date_end = '2020-11-24 00:00';
+usb_sessions(index).force_reprocess = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '200521-200524-fig7-sun-moon-cmbr-sessions';
+usb_sessions(index).date_start = '2020-05-21 00:00';
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+% usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).date_end = '2020-05-24 00:00';
+usb_sessions(index).force_reprocess = false;
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '200221-200224-fig6-sun-moon-cmbr-sessions';
+usb_sessions(index).date_start = '2020-02-21 00:00';
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).date_end = '2020-02-24 00:00';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).ignore_datetime = {'2020-02-10 15:30', '2020-02-14 16:30', ...
+    '2020-02-15 15:00', ...
+    '2020-02-15 15:30', ...
+    '2020-02-15 15:30', ...
+    '2020-02-17 15:00', '2020-02-17 15:30','2020-02-17 16:00',...
+    '2020-02-17 16:30','2020-02-17 17:00','2020-02-17 17:30'};
+
+
+index = length(usb_sessions)+1;
 % redoing session, same name different start date
 usb_sessions(index).name = '200210-200303-fig6-sun-moon-cmbr';
-usb_sessions(index).date_start = '2020-02-10 15:30';
-
-% usb_sessions(index).date_start = '2020-02-14 16:30';
-% usb_sessions(index).date_start = '2020-02-15 15:00';
-% usb_sessions(index).date_start = '2020-02-19 09:00';
-
-
-
-% % commented 2024-03-07
-% usb_sessions(index).date_start = '2020-02-12 01:30';
-% usb_sessions(index).date_start = '2020-02-12 23:30';
-% usb_sessions(index).date_start = '2020-02-13 03:00';
-% usb_sessions(index).date_start = '2020-02-17 17:00';
-% usb_sessions(index).date_start = '2020-02-25 14:30';
-
-
-% usb_sessions(index).date_start= '2020-02-22 01:00';
-% usb_sessions(index).date_start= '2020-02-22 18:30';
-% usb_sessions(index).date_start= '2020-02-23 00:30';
-% usb_sessions(index).date_start= '2020-02-23 06:30';
-
+usb_sessions(index).date_start = '2020-02-21 00:00';
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).day_session = true ;
+usb_sessions(index).rotating_session = false;
+usb_sessions(index).force_reprocess = false;
 usb_sessions(index).date_end = '2020-03-03 18:00';
+usb_sessions(index).date_end = '2020-02-24 00:00';
 usb_sessions(index).force_reprocess = false;
 usb_sessions(index).ignore_datetime = {'2020-02-10 15:30', '2020-02-14 16:30', ...
     '2020-02-15 15:00', ...
