@@ -39,7 +39,7 @@ if loadfile && exist(altitude_filename, 'file')
 
     for r=1:size(rawData,1)
         t=r;
-        timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
+        timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))+1/24*4;
         timeAltitude(t,2,starname_i)=rawData{r,5}; % equatorial altitude
         timeAltitude(t,3,starname_i)=rawData{r,4}; % equatorial azimuth
         if size(rawData,2)>5 && ~strcmp(rawData{r,7}, 'undefined')
