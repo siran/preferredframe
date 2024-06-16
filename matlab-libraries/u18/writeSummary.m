@@ -3,6 +3,20 @@ function writeSummary(varargin)
 
 summary_path = 'D:\Users\an\experimento-usb-interferometro\analysis-summaries\';
 
+% % % % % % % % % % % % % % % % % % % % % % % % % % 
+stars = {'HIP54589', 'Sun', 'Moon', 'Jupiter', 'Venus', 'Mars'};
+colors = { ...
+    [0.0, 0.0, 1.0],    ... % Blue for HIP54589
+    [1.0, 1.0, 0.0],    ... % Yellow for Sun
+    [0.0, 0.0, 0.0],    ... % Black for Moon
+    [0.6, 0.3, 0.0],    ... % Brown for Jupiter
+    [0.7, 0.7, 0.7],    ... % Light Gray for Venus
+    [1.0, 0.0, 0.0]     ... % Red for Mars
+};
+masses = {nan, 1.98885E30, 7.3477E22, 1.898E27, 4.867E24, 6.39E23};
+G = 0.000000000066743;
+% % % % % % % % % % % % % % % % % % % % % % % % % % %
+
 nVarargs = length(varargin);
 for k = 1:2:nVarargs
     if strcmp(varargin{k}, 'sessionId')
@@ -64,8 +78,6 @@ for j=1:size(YY,1)
     summary(i).rotations = rotations;
     summary(i).separation = separation;
     summary(i).group = j;
-%     summary(i).datetime = datestr(XX(j), 'YYYY-mm-dd HH:MM');
-%     summary(i).time = datestr(XX(j), 'HH:MM');
     summary(i).datetime = datestr(timeRange(1), 'YYYY-mm-dd HH:MM');
     summary(i).time = datestr(timeRange(1), 'HH:MM');
     [maxv, imaxv] = max(YY(j,:));
@@ -73,13 +85,11 @@ for j=1:size(YY,1)
     summary(i).amplitude =  maxv - minv;
     summary(i).max = maxv;
     summary(i).min = minv;
-
     summary(i).fringe_separation_session = fringe_separation;    
     if YYstddev ~= 0
         summary(i).amplitude_error = abs(YYstddev(imaxv)) + abs(YYstddev(iminv));
     end
-    % summary(i).average_altitude = star_altitude;
-    
+
     if contains(sessionId,'norm')
         summary(i).figure_type = 'normalized';
     elseif contains(sessionId,'inde')
@@ -92,32 +102,33 @@ for j=1:size(YY,1)
     summary(i).average_position = (maxv + minv)/2;
 
     if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
-        % Loop though all stellar object
-        stars = {'HIP54589', 'Sun', 'Moon'};
-        masses = [nan, 1.98885E30, 7.3477E22];
-        G = 0.000000000066743;
-        c_light=3e9;
-        
+        % Loop though all stellar object       
         for starname_i = 1:length(stars)
             fieldname = ['altitude_' stars{starname_i}];
+            disp(['Calculating altitude for: ' fieldname]);
+            disp(['timeAltitude size: ' num2str(size(timeAltitude))]);
+            disp(['timeAltitude(:,1,starname_i) size: ' num2str(size(timeAltitude(:,1,starname_i)))]);
             summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,2,starname_i), XX(j));
+            fieldname = ['azimuth_' stars{starname_i}];
+            disp(['Calculating azimuth for: ' fieldname]);
+            summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,3,starname_i), XX(j));
+      
             if size(timeAltitude,2) > 3
-                fieldname = ['c_cure_' stars{starname_i}];
-                distance_m = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j))*10^3;
-                mass_i = masses(starname_i);
-                c_cure = 1/(G*mass_i^2/(8*pi*distance_m^4));
+                fieldname = ['distance_km_' stars{starname_i}];
+                distance_km = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j));
+                summary(i).(fieldname) = distance_km;
 
-                summary(i).(fieldname) = c_cure;
+                fieldname = ['p_inv_' stars{starname_i}];
+                mass_i = masses{starname_i};
+                e_density_inv = 1/(G*mass_i^2/(8*pi*(distance_km*1E3)^4));
+                summary(i).(fieldname) = e_density_inv;
+
             end
-            % timeAltitude(t,1,starname_i)=datenum(datetime(rawData{r,1},'InputFormat','yyyy-MM-dd''T''HH:mm:ss'))-1/24*4;
-            % timeAltitude(t,2,starname_i)=rawData{r,5}; % equatorial altitude
-            % timeAltitude(t,3,starname_i)=rawData{r,4}; % equatorial azimuth
-            % 
-            % star_altitude = pchip(timeAltitude(:,1), timeAltitude(:,2), XX(j));
         end
     end    
 end
+
     
 writetable(struct2table(summary), filename);
 
-return
+% return

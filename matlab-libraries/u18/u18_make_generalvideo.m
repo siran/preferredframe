@@ -5,7 +5,8 @@ warning('off', 'images:initSize:adjustingMag')
 warning('off', 'MATLAB:audiovideo:VideoWriter:noFramesWritten')
 warning('off', 'MATLAB:Axes:UnsupportedDataAspectRatio')
 
-path_output = 'D:\Users\an\candlelight-experiment\videos';
+% path_output = 'D:\Users\an\candlelight-experiment\videos';
+path_output = 'D:\Users\an\experimento-usb-interferometro\videos';
 % path_images = 'D:\Users\an\experimento-usb-interferometro\tobo-ordenado\2021-02-06\n210206_0930\';
 % videoId = 'n210202_0500'
 
@@ -13,8 +14,9 @@ path_output = 'D:\Users\an\candlelight-experiment\videos';
 %     ,'D:\Users\an\experimento-usb-interferometro\tobo-ordenado\2021-03-27\n210327_1000' ...
 path_images = {...
     '' ...
-%     ,'G:\My Drive\preferred-frame\usb-one-way\rotaciones-promediadas-normalizadas\rotaciones-promediadas-normalizadas-20191001-20191019' ...
-    destination_package_directory
+    % ,'G:\My Drive\preferred-frame\usb-one-way\rotaciones-promediadas-normalizadas\rotaciones-promediadas-normalizadas-20191001-20191019' ...
+    % destination_package_directory
+    ,'D:\Users\an\experimento-usb-interferometro\figures\200210-200303-fig6-sun-moon-cmbr' ...
 };
 
 for i = 1:length(path_images)
@@ -23,7 +25,7 @@ for i = 1:length(path_images)
         continue
     end
     
-    files_images = dir(strcat(path_images{i},'\*.jpg'));
+    files_images = dir(strcat(path_images{i},'\*mean-group-r10s10-normalized-*.jpg'));
     
     [path, filename, extention] = fileparts(path_images{i});
     

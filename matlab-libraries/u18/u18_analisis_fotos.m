@@ -73,9 +73,15 @@ if ~exist('files_images', 'var') || ~exist('x_timestamp', 'var')
             % sometimes the first image is rotated 90degress which causes the program
             % to error out            
             if t<3
-                info1 = imfinfo([files_images_raw(t).folder '\' files_images_raw(t).name]);
-                info2 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+1).name]);
-                info3 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+2).name]);
+                if ~exist(files_images_raw(t).name, 'file')
+                    info1 = imfinfo([files_images_raw(t).folder '\' files_images_raw(t).name]);
+                    info2 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+1).name]);
+                    info3 = imfinfo([files_images_raw(t+1).folder '\' files_images_raw(t+2).name]);
+                else
+                    info1 = imfinfo([files_images_raw(t).name]);
+                    info2 = imfinfo([files_images_raw(t+1).name]);
+                    info3 = imfinfo([files_images_raw(t+2).name]);                    
+                end
                 if info1.Width ~= info2.Width && info1.Width ~=info3.Width && info2.Width == info3.Width
                     movefile([files_images_raw(t).folder '\'  files_images_raw(t).name], [files_images_raw(t).folder '\' 'ignored_images'])
                     restart = true
@@ -96,7 +102,12 @@ if ~exist('files_images', 'var') || ~exist('x_timestamp', 'var')
             % files_images(image_counter) = files_images_raw(t);
             files_images(image_counter).datenum = datenum(date,'yyyy:mm:dd HH:MM:SS');
             x_timestamp(image_counter) = files_images(image_counter).datenum;
-            orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
+            % orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
+            if isfield(info.GPSInfo, 'GPSImgDirection')
+                orientacion(image_counter) = info.GPSInfo.GPSImgDirection;
+            else
+                orientacion(image_counter) = NaN; % Assign NaN if GPSImgDirection is not available
+            end
             
         % catch
         %     full_name_image = [files_images_raw(t).folder '\' files_images_raw(t).name];
@@ -110,6 +121,10 @@ if ~exist('files_images', 'var') || ~exist('x_timestamp', 'var')
         
     end    
     save(exif_fname, "orientacion",'x_timestamp','files_images')
+
+    % removing nans
+    orientacion(isinf(orientacion) | isnan(orientacion)) = [];
+
     orientacion_orig = orientacion;
     % [tmp, ind]=sort([files_images.datenum]);
     % files_images = files_images(ind);

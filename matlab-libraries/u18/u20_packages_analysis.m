@@ -26,6 +26,7 @@ PCT_VALID_DATA = 0;
 DAY_SESSION = false;
 AJUSTAR = true;
 ROTATING_SESSION = true;
+ADD_HOURS = -4.5;
 
 load_sessions
 
@@ -36,7 +37,7 @@ load_sessions
 %%%%%%%%%%%%%%%%%%%
 
 % Filtro de las que quiero procesar
-% En usb_session están todas las sesiones definidas
+% En usb_session estÃ¡n todas las sesiones definidas
 process_sessions = {
 %     '200515-200531-con-deriva'
 %     '200601-200625-con-deriva'
@@ -62,7 +63,7 @@ process_sessions = {
 %     '200810-200820'
 %     '200917-200919'
 %     '201009-201014'
-    
+
 
 %     '201114-201117'
 %     '201119-201123'
@@ -72,8 +73,8 @@ process_sessions = {
 %       '200229-200303'
 
 %     '210131-210222'te
-    
-%     '210307-210309' 
+
+%     '210307-210309'
 %     '210327-210408'
 %     '210428-210525'
 %     '220617-220621'
@@ -88,14 +89,24 @@ process_sessions = {
     % '2020-02-27--2020-03-24--paper-2'
     % '2020-02-27--2020-03-24--paper-2-day_session'
     % '200221-200228-partial-reprocesss--req-edo-day_session'
-    % '200225-200226-partial-reprocesss--req-edo-day_session-sun,moon'
+    % '200225-200226-parktial-reprocesss--req-edo-day_session-sun,moon'
     % '200226-partial-reprocesss--req-edo-day_session-sun,moon'
-    '200210-200303-fig6-sun-moon-cmbr'
+    % '200210-200303-fig6-sun-moon-cmbr'
+    % '200221-200224-fig6-sun-moon-cmbr-sessions'
+    % '200521-200524-fig7-sun-moon-cmbr-sessions'
+    % '201121-201124-fig8-sun-moon-cmbr-sessions'
+    % '200601-200630-req-edo'
+    % '200701-200731'
+    %    '200210-200303-fig6-stellar'
+    'test-200210-200303-fig6-stellar'
 
 };
 
 for sindex=1:size(process_sessions, 1)
     for uindex=1:length(usb_sessions)
+        if uindex > length(usb_sessions)
+            break
+        end
         if isempty(usb_sessions(uindex).name)
             fprintf('usb_sessions(%d) is empty. continue.\n', uindex)
             continue
@@ -112,16 +123,18 @@ for sindex=1:size(process_sessions, 1)
         end
         if ~isfield(processing_session, 'y_scale') || isempty(processing_session.y_scale)
             processing_session.y_scale = Y_SCALE;
-        end  
+        end
         if ~isfield(processing_session, 'ignore_folder') || isempty(processing_session.ignore_folder)
             processing_session.ignore_folder = IGNORE_FOLDER;
-        end        
+        end
+        % *test*
+        %
         if ~isfield(processing_session, 'ignore_datetime') || isempty(processing_session.ignore_datetime)
             processing_session.ignore_datetime = IGNORE_DATETIME;
         end
         if ~isfield(processing_session, 'makeVideo') || isempty(processing_session.makeVideo)
             processing_session.makeVideo = MAKE_VIDEO;
-        end        
+        end
         if ~isfield(processing_session, 'force_reprocess') || isempty(processing_session.force_reprocess)
             processing_session.force_reprocess = FORCE_REPROCESS;
         end
@@ -136,13 +149,13 @@ for sindex=1:size(process_sessions, 1)
         end
         if ~isfield(processing_session, 'remove_drift') || isempty(processing_session.remove_drift)
             processing_session.remove_drift = REMOVE_DRIFT ;
-        end       
+        end
         if ~isfield(processing_session, 'saveTxtData') || isempty(processing_session.saveTxtData)
             processing_session.saveTxtData = SAVE_TXT_DATA ;
-        end       
+        end
         if ~isfield(processing_session, 'removeOutliers') || isempty(processing_session.removeOutliers)
             processing_session.removeOutliers = REMOVE_OUTLIERS ;
-        end           
+        end
         if ~isfield(processing_session, 'error_bars') || isempty(processing_session.error_bars)
             processing_session.error_bars = ERROR_BARS ;
         end
@@ -158,10 +171,12 @@ for sindex=1:size(process_sessions, 1)
         if ~isfield(processing_session, 'rotating_session') || isempty(processing_session.rotating_session)
             processing_session.ajustar = ROTATING_SESSION ;
         end
-        
-        
-        
-        
+        if ~isfield(processing_session, 'add_hours')
+            processing_session.add_hours = ADD_HOURS ;
+        end
+
+
+
         package_name = processing_session.name;
         date_start = processing_session.date_start;
         date_end = processing_session.date_end;
@@ -172,3 +187,4 @@ for sindex=1:size(process_sessions, 1)
         u18w_general
     end
 end
+

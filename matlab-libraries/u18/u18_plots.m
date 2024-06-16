@@ -63,7 +63,7 @@ end
 
 rotation0_pks = [];
 rotation0_locs = [];
-if ~isfield(processing_session, 'rotating_sessions')
+if ~isfield(processing_session, 'rotating_session')
     processing_session.rotating_session = true;
 end
 if rotationsFound && processing_session.rotating_session
@@ -163,7 +163,7 @@ datetick('x', 'dd/mm HH:MM')
 xlabel('Date-time (dd/mm HH:MM)')
 ax = gca;
 ax.XTickLabelRotation = 90;
-plotheightstar
+% plotheightstar
 %     xlim([x_start x_end])
 config_plot
 %     ylim([0 1600])
@@ -515,6 +515,16 @@ p_adjusted_pref = p_adjusted(:,lineaPreferida);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Separacion franjas
 
+% check fringe separation
+separation = ( p_adjusted_hampel(:, lineaPreferida) - ...
+        p_adjusted_hampel(:, lineaPreferidaAdjunta));
+
+separation_range = abs(separation)<150;
+p_adjusted_hampel(~separation_range, lineaPreferida) = nan;
+p_adjusted_hampel(~separation_range, lineaPreferidaAdjunta) = nan;
+separation(~separation_range) = nan;
+
+
 plot(...
 	xts, ...
     p_adjusted_hampel(:, lineaPreferida), ...    
@@ -556,18 +566,19 @@ usb2018_saveFigureToFile('fringes_for_difference')
 %     size(p_adjusted_hampel(:, lineaPreferidaAdjunta), 1) ...
 %     ] ...
 % );
-limiteSeparacionFranjas = length(p_adjusted_hampel);
+% limiteSeparacionFranjas = length(p_adjusted_hampel);
 % puntosSeparacionFranjas, size(p_adjusted_hampel,1);
 % else
 %     limiteSeparacionFranjas = size(p_adjusted_hampel,1);
 % end
 
 try
-    separacionFranjas = abs( mean( ...
-            p_adjusted_hampel(1:limiteSeparacionFranjas, lineaPreferida) ...
-            - p_adjusted_hampel( ...
-                1:limiteSeparacionFranjas, lineaPreferidaAdjunta) ...
-    , "omitnan"));
+    % rawseparation = hampel( ...
+    %     p_adjusted_hampel(1:limiteSeparacionFranjas, lineaPreferida) -...
+    %     p_adjusted_hampel(1:limiteSeparacionFranjas, lineaPreferidaAdjunta) ...
+    % , 20);
+
+    separacionFranjas = abs( mean( separation, "omitnan"));
 catch
     fprintf('Error en separacion franjas. Abortando operacion.')
     1/0
@@ -575,15 +586,14 @@ catch
 end
 
 
-errorSeparacionFranjas = std(hampel( ...
-        p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferida) - p_adjusted_hampel(1:limiteSeparacionFranjas,lineaPreferidaAdjunta) ...
-    ),"omitmissing") / ...
-    sqrt(length(p_adjusted_hampel(:,lineaPreferida)));
+errorSeparacionFranjas = std(separation,"omitmissing") / ...
+    sqrt(length(separation));
 
 % figure
-restaLineas = p_adjusted_hampel(:,lineaPreferida) - p_adjusted_hampel(:,lineaPreferidaAdjunta);
+% restaLineas = hampel(p_adjusted_hampel(:,lineaPreferida) - p_adjusted_hampel(:,lineaPreferidaAdjunta), 10);
 % restaLineas = hampel(restaLineas);
-plot(xts, restaLineas,'gX')
+restaLineas = separation;
+plot(xts, separation,'gX')
 hold on
 % plot(xts, smooth(restaLineas,20),'x')
 title({'Separation between fringes ', ...
@@ -594,7 +604,7 @@ title({'Separation between fringes ', ...
 %     legend(['Franja limitada a ' num2str(limiteSeparacionFranjas) 'puntos'])
 % end
 ylabel('Difference of displacement between two adjacent fringes (px)')
-if isnan(restaLineas)
+if isnan(separation)
     return
 end
 ylim([min(restaLineas)-5 max(restaLineas)+5])

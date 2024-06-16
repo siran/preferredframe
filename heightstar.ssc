@@ -6,7 +6,7 @@
 // Made on Stellarium 0.16.1
 
 years = ["2020"]
-months = ["02","05","06","11"]
+months = ["02","03","05","06","07", "08", "09"]
 
 local_output_path = "D:\\Users\\an\\experimento-usb-interferometro\\"
 
@@ -15,7 +15,7 @@ dir_name = "height-star"
 output_path = local_output_path + "\\" + dir_name + "\\"
 
 // stars
-object_infos = ["HIP54589","Sun","Moon"]
+object_infos = ["HIP54589","Sun","Moon", "Jupiter", "Venus", "Mars"]
 
 observer_location = "Caracas, Venezuela"
 
@@ -68,10 +68,11 @@ for (k=0; k<object_infos.length; k++) {
 				map=core.getObjectInfo(object_info)
 				core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
 				if (i == 0) {
+					core.debug(output_fname)
 					core.debug("TEST LINE: " + date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
 				}
 				if (i % 100 == 0) {
-					core.debug(object_info + ": " + year + "-" + month + " - " + i + "/" + ciclos )
+					//core.debug(object_info + ": " + year + "-" + month + " - " + i + "/" + ciclos )
 				}
 				core.setDate("+"+minutos_medida+" minutes", "UTC")
 				core.wait(waittime);

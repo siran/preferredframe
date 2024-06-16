@@ -1,4 +1,55 @@
 index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = 'test-200210-200303-fig6-stellar';
+usb_sessions(index).date_start = '2020-02-21 00:00';
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).date_end = '2020-02-23 01:00';
+% usb_sessions(index).date_end = '2020-02-24 00:00';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).add_hours = -4;
+usb_sessions(index).ignore_datetime = {'2020-02-10 15:30', '2020-02-14 16:30', ...
+    '2020-02-15 15:00', ...
+    '2020-02-15 15:30', ...
+    '2020-02-15 15:30', ...
+    '2020-02-17 15:00', '2020-02-17 15:30','2020-02-17 16:00',...
+    '2020-02-17 16:30','2020-02-17 17:00','2020-02-17 17:30'};
+
+index = length(usb_sessions)+1;
+% redoing session, same name different start date
+usb_sessions(index).name = '200210-200303-fig6-stellar';
+usb_sessions(index).date_start = '2020-02-21 00:00';
+usb_sessions(index).remove_drift = false;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).date_end = '2020-03-03 18:00';
+% usb_sessions(index).date_end = '2020-02-24 00:00';
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).add_hours = -4;
+usb_sessions(index).ignore_datetime = {'2020-02-10 15:30', '2020-02-14 16:30', ...
+    '2020-02-15 15:00', ...
+    '2020-02-15 15:30', ...
+    '2020-02-15 15:30', ...
+    '2020-02-17 15:00', '2020-02-17 15:30','2020-02-17 16:00',...
+    '2020-02-17 16:30','2020-02-17 17:00','2020-02-17 17:30'};
+
+index = length(usb_sessions)+1;
+usb_sessions(index).name = '200701-200731';
+usb_sessions(index).date_start = '2020-06-30 00:00';
+usb_sessions(index).date_start = '2020-07-01 07:00';
+% usb_sessions(index).ignore_datetime = {'2020-06-01 18:00', '2020-06-09 13:00','2020-06-19 12:00'};
+usb_sessions(index).date_end = '2020-07-31 23:30';
+usb_sessions(index).remove_drift = true;
+usb_sessions(index).day_session = false ;
+usb_sessions(index).rotating_session = true;
+usb_sessions(index).force_reprocess = false;
+usb_sessions(index).add_hours = -4;
+
+
+index = length(usb_sessions)+1;
 usb_sessions(index).name = '200601-200630-req-edo';
 usb_sessions(index).date_start = '2020-06-01 00:00';
 usb_sessions(index).date_start = '2020-06-01 18:00';
@@ -11,6 +62,7 @@ usb_sessions(index).rotating_session = true;
 usb_sessions(index).force_reprocess = false;
 usb_sessions(index).date_end = '2020-06-30 23:30';
 usb_sessions(index).force_reprocess = false;
+usb_sessions(index).add_hours = -4;
 
 index = length(usb_sessions)+1;
 usb_sessions(index).name = '201121-201124-fig8-sun-moon-cmbr-sessions';
@@ -649,31 +701,31 @@ usb_sessions(index).force_reprocess = false;
 % % usb_sessions(index).ignore_datetime = {...
 % %     '2018-08-26 14:00', '2018-09-10 18:00','2018-09-14 21:00', ...
 % %     '2018-08-21 18:30', '2018-08-21 19:00'};
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '190910-190930-con-deriva';
 % usb_sessions(index).date_start = '2019-09-10';
 % usb_sessions(index).date_end = '2019-09-30 23:30';
 % usb_sessions(index).day_session = false;
 % usb_sessions(index).ignore_datetime = {'2019-09-22 13:30', '2019-09-22'};
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '200810-200820-con-deriva';
 % usb_sessions(index).date_start = '2020-08-10 13:30';
 % usb_sessions(index).date_end = '2020-08-20 13:30';
 % usb_sessions(index).ignore_datetime = {'2020-08-18 21:30'};
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '200810-200820';
 % usb_sessions(index).date_start = '2020-08-10 13:30';
 % usb_sessions(index).date_end = '2020-08-20 13:30';
 % usb_sessions(index).ignore_datetime = {'2020-08-18 21:30'};
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '190802-190804';
 % usb_sessions(index).date_start = '2019-08-02 11:00';
 % usb_sessions(index).date_end = '2019-08-04 21:30';
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '200917-200919';
 % usb_sessions(index).date_start = '2020-09-17';
@@ -690,7 +742,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '190910-190930';
 % usb_sessions(index).date_start = '2019-09-10';
@@ -707,8 +759,8 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
-% 
-% 
+%
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '180818-181216';
 % usb_sessions(index).date_start = '2018-08-18';
@@ -724,8 +776,8 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).minpeakdistance = 60;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
-% 
-% 
+%
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '180818-181216-filtered';
 % usb_sessions(index).date_start = '2018-08-18';
@@ -741,7 +793,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).minpeakdistance = 60;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '180818-181216-filtered';
 % usb_sessions(index).date_start = '2018-08-18';
@@ -758,8 +810,8 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % %%%%%%%%%%%%%%%%%%%
-% 
-% 
+%
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20190901-20190922';
 % usb_sessions(index).date_start = '2019-09-01';
@@ -775,7 +827,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20190923-20190930';
 % usb_sessions(index).date_start = '2019-09-23';
@@ -791,7 +843,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20210426-20210430-MM';
 % usb_sessions(index).date_start = '2021-04-29 08:00';
@@ -807,13 +859,13 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).smooth_num_points = 20;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20210430-MM';
 % usb_sessions(index).date_start = '2021-04-30 16:00';
-% 
+%
 % usb_sessions(index).date_start = '2021-05-01 15:30';
-% 
+%
 % usb_sessions(index).date_end = '2021-05-30 10:30';
 % usb_sessions(index).day_session = false;
 % usb_sessions(index).y_scale = false;
@@ -825,8 +877,8 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
 % usb_sessions(index).ratio_fringe_separation = .75;
-% 
-% 
+%
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20210501-MM-robert';
 % usb_sessions(index).date_start = '2021-05-01 07:00';
@@ -841,8 +893,8 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
 % usb_sessions(index).ratio_fringe_separation = .75;
-% 
-% 
+%
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20210520-MM';
 % usb_sessions(index).date_start = '2021-05-20 14:00';
@@ -857,7 +909,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).filterDiskSize = 10;
 % usb_sessions(index).rotating_session = false;
 % usb_sessions(index).ratio_fringe_separation = .75;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20210426-greaves';
 % usb_sessions(index).date_start = '2021-04-26 17:30';
@@ -873,7 +925,7 @@ usb_sessions(index).force_reprocess = false;
 % usb_sessions(index).rotating_session = false;
 % usb_sessions(index).ratio_fringe_separation = .70;
 % usb_sessions(index).saveTxtData = true;
-% 
+%
 % index = length(usb_sessions)+1;
 % usb_sessions(index).name = '20191101-20191124';
 % usb_sessions(index).date_start = '2019-11-01 12:30';

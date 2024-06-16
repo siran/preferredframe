@@ -160,6 +160,7 @@ for d=1:length(session_days)
         % TODO: if it isfiles a "day session" the idea is to load all pics, from
         % all folders of the date in the array; this used to work in the
         % past
+        day_session = processing_session.day_session;
         if day_session
             session = day;
             videoId = ['wday' '-' datestr(datenum(date_start), 'yyyymmdd') ...
@@ -212,10 +213,10 @@ for d=1:length(session_days)
                     end
 %                     if pictures(1).datenum > ()
  
-                    for pics_i = 1:length(pictures)
-                        pictures(pics_i).name_orig = pictures(pics_i).name;
-                        pictures(pics_i).name = [path_session_folder pictures(pics_i).name];
-                    end
+                    % for pics_i = 1:length(pictures)
+                    %     pictures(pics_i).name_orig = pictures(pics_i).name;
+                    %     % pictures(pics_i).name = [path_session_folder pictures(pics_i).name];
+                    % end
                     if ~exist('files_images', 'var')
                         files_images = pictures';
                     else
@@ -383,6 +384,7 @@ for d=1:length(session_days)
 
         % clear lineaPreferida lineaPreferidaAdjunta
         u18_plots
+        % a=1
 
         % reply = input(['Move ' path_images_old ' to ' '[Y/n]?'],'s');
         % if isempty(reply)
