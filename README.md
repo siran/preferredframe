@@ -1,4 +1,4 @@
-Script to analize the pictures taken with a TWR-type interferometer ('asymmetric' Mach-Zenhder).
+Scripts to analyze the pictures taken with a TWR-type interferometer ('asymmetric' Mach-Zenhder).
 
 (Pictures are in a separate storage location)
 
