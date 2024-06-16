@@ -40,7 +40,6 @@ detects and logs maxima per picture
 - writeSummary.m
 Writes .csv file
 
-# In folder
 - readdatetimealt.m
 Read/caches the stellar data files generated in Stellarium
 
