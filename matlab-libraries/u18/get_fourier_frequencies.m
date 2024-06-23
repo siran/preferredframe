@@ -4,13 +4,15 @@
 % a tuple (xts,p) corresponds to a vector p of the position in pixels of
 % interference maxima
 
-x = xts(1:size(xts));
-y = p(1:size(xts));
+p(isnan(p))=0;
+
+x = xts(1:length(xts(1:512)));
+y = p(1:length(xts(1:512)));
 
 L = size(x,1); % Length of signal 
 
 pics_per_sec = 3;
-Fs = 24*60*60/pics_per_sec;   % Sampling frequency
+Fs = 1/20;   % Sampling frequency (1 pic every 20 sec)
 T = 1/Fs;       % Sample time
 t = (0:L-1)*T;  % Time vector
 
@@ -23,3 +25,4 @@ plot(f,2*abs(Y(1:NFFT/2+1)))
 title('Fourier transform')
 xlabel('Times per day')
 ylabel('|Y(f)|')
+ylim([0,60])
