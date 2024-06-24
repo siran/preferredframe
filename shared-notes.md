@@ -46,11 +46,7 @@ Other don't believe us, and they don't have to.
 
 There should be a simple principle or effect that could prove first to us, withough a shred of doubt, the next logical step.
 
-I was thinking in a floating needle in the middle of a container.
-    - The density of the fluid could be adjusted to allow free rotation of the needle (need to think what would cause this force... :/ );
-    - since it's floating it might be super sensitive to gravity; the liquid should allow very easy movement with almost any resistance;
-    - probably we can support the needle on one of its ends, and let it float at an angle;
-    - the angle should change if we make it right.
+See for example (electro-magetic-compass-keychain)[(#electro-magetic-compass-keychain)
 
 # next steps
 
@@ -58,7 +54,12 @@ I was thinking in a floating needle in the middle of a container.
 
 # Pet Projects:
 
-## Electro Magetic Compass keychain
+## Electro Magnetic Compass keychain
+I was thinking in a floating needle in the middle of a container.
+    - The density of the fluid could be adjusted to allow free rotation of the needle (need to think what would cause this force... :/ );
+    - since it's floating it might be super sensitive to gravity; the liquid should allow very easy movement with almost any resistance;
+    - probably we can support the needle on one of its ends, and let it float at an angle;
+    - the angle should change if we make it right.
 
 ## Energy generation using our movement relative to the medium
 
