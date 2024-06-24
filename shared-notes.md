@@ -8,6 +8,7 @@ The idea is to explore the vast information we've shared over email.
   - [Doppler explains everything](#doppler-explains-everything)
   - [Gravity as Dielectric](#gravity-as-dielectric)
   - [we just need to convince ourselves](#we-just-need-to-convince-ourselves)
+    - [next steps](#next-steps)
     - [Pet Projects:](#pet-projects)
 
 
@@ -42,6 +43,8 @@ I was thinking in a floating needle in the middle of a container.
     - probably we can support the needle on one of its ends, and let it float at an angle;
     - the angle should change if we make it right.
 
+### next steps
+* analyze frequencies of data
 
 ### Pet Projects:
 * Electro Magetic Compass keychain
