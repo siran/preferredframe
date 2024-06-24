@@ -32,8 +32,10 @@ The idea is to explore the vast information we've shared over email.
   * gravity can be seen as a dielectric as per Maxwell eqs
     * dielectric constant K seems to be p^2 where p is energy density of space;
     * $c = c_o/\sqrt{p^2}$
-    * $p = p* + p_earth + p_moon + ...$
-    * however a hypothesis is the instead use the Barycenter of the Solar System
+    * $p = p* + p_{earth} + p_{moon} + ...$
+    * however a hypothesis is to instead use the Barycenter of the Solar System to calculate gravitational influence from the center of mass
+      * see [Is it possible to calculate the barycenter of a planet with several moons](https://qr.ae/ps6SQe)
+        * (this should be already available)
 
 ## we just need to convince ourselves
 It is indeed difficult to convince the community as a whole since many (not all) are more interested in proving us wrong than to help us being right.
