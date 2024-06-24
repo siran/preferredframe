@@ -9,7 +9,13 @@ The idea is to explore the vast information we've shared over email.
   - [Gravity as Dielectric](#gravity-as-dielectric)
   - [we just need to convince ourselves](#we-just-need-to-convince-ourselves)
     - [next steps](#next-steps)
+      - [analyze frequencies of data](#analyze-frequencies-of-data)
     - [Pet Projects:](#pet-projects)
+      - [Electro Magetic Compass keychain](#electro-magetic-compass-keychain)
+      - [Energy generation using our movement relative to the medium](#energy-generation-using-our-movement-relative-to-the-medium)
+      - [Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity](#energy-generation-using-the-hypothesis-that-light-speed-changes-with-a-dielectric-medium-as-gravity)
+      - [Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)](#casimir-force-driven-motor-force-felt-by-to-parallel-conducting-plantes-when-brought-close-to-each-other)
+      - [measure one-way speed of light](#measure-one-way-speed-of-light)
 
 
 
@@ -44,9 +50,24 @@ I was thinking in a floating needle in the middle of a container.
     - the angle should change if we make it right.
 
 ### next steps
-* analyze frequencies of data
+
+#### analyze frequencies of data
 
 ### Pet Projects:
-* Electro Magetic Compass keychain
-* Energy generation using our movement relative to the medium
-* Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity
+
+#### Electro Magetic Compass keychain
+
+#### Energy generation using our movement relative to the medium
+
+#### Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity
+
+#### Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)
+* casimir's force seems to be proportional to energy density
+* energy density varies as the Barycenter (solar system, earth-moon) moves around us
+  * calculate coordinates of barycenter and fit to plots
+    * earth-moon
+    * earth-sun-moon
+
+#### measure one-way speed of light
+* we can use Intensity of power measured as a proxy to distance traveled by light , $\displaystyle I \propto \frac{1}{r^2}$
+* intensity can be measured consecutively at the receiver's end, it should drop as $1/r^2$; can one way speed of light be inferred this way?
