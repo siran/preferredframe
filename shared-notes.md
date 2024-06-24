@@ -16,6 +16,7 @@ The idea is to explore the vast information we've shared over email.
       - [Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity](#energy-generation-using-the-hypothesis-that-light-speed-changes-with-a-dielectric-medium-as-gravity)
       - [Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)](#casimir-force-driven-motor-force-felt-by-to-parallel-conducting-plantes-when-brought-close-to-each-other)
       - [measure one-way speed of light](#measure-one-way-speed-of-light)
+      - [Use 3b1b's library to do simulations of our measurements](#use-3b1bs-library-to-do-simulations-of-our-measurements)
 
 
 
@@ -71,3 +72,5 @@ I was thinking in a floating needle in the middle of a container.
 #### measure one-way speed of light
 * we can use Intensity of power measured as a proxy to distance traveled by light , $\displaystyle I \propto \frac{1}{r^2}$
 * intensity can be measured consecutively at the receiver's end, it should drop as $1/r^2$; can one way speed of light be inferred this way?
+
+#### Use 3b1b's library to do simulations of our measurements
