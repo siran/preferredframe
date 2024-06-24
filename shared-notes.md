@@ -51,12 +51,19 @@ I was thinking in a floating needle in the middle of a container.
     - the angle should change if we make it right.
 
 # next steps
+
 ## analyze frequencies of data
+
 # Pet Projects:
+
 ## Electro Magetic Compass keychain
+
 ## Energy generation using our movement relative to the medium
+
 ## Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity
+
 ## Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)
+* we don't necessarily need to know the oscillation function, any oscillation could be useful if designed like a `check valve` or diode
 * casimir's force seems to be proportional to energy density
 * energy density varies as the Barycenter (solar system, earth-moon) moves around us
   * calculate coordinates of barycenter and fit to plots
