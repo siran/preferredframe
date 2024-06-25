@@ -102,8 +102,9 @@ I was thinking in a floating needle in the middle of a container.
 
 ## Use 3b1b's library to do simulations of our measurements
 
-## Replicate de Witte's experiment with optic cables
+## Replicate de Witte's experiment with fiber optic cables
  Roland De Witte's experiment [^de_witte_coaxial_xch]
+ I believe this has already been done and reported for a M&M setup.
 
 ---
 ### References
