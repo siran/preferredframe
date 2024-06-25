@@ -33,6 +33,9 @@ see [^modern_fizeau_experiment], mostly Figure 10
 ### questions
 * why does a changing speed of light is experienced as a (gravitational) force?
 
+
+is this the right question? or perhaps a change in the speed of light is experienced as matter as a way to keep energy constant.
+
 moving away from a gravitational source, it's gravitational energy density diminishes and light speed increases.
 
 a daily change in the maximum amplitude of the average of rotations (Fig 6 of [^daily]) means light is changing speed by 30%.
@@ -44,6 +47,8 @@ Although this equation can't be trusted a priori withough further research with 
 E = mc^2
 
 would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
+
+
 
 I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be "buoy analogy".
 
