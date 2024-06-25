@@ -26,15 +26,12 @@ The idea is to explore the vast information we've shared over email.
 * Doppler explains Figure 5 of An's Research Gate [^daily_variations_rg]
 
 ### Modern repetition of the Fizeau experiment
-see [^modern_fizeau_experiment], mostly Figure 10
+see [^modern_fizeau_experiment], mostly Figure 10 which shows that the Fizeau result is explained by dragging and not by relativiy (~=Frenel's Drag hypothesis [^fresnels_drag_from_sr_mathpages])
 
 ## Gravity as Dielectric
 
 ### questions
 * why does a changing speed of light is experienced as a (gravitational) force?
-
-
-is this the right question? or perhaps a change in the speed of light is experienced as matter as a way to keep energy constant.
 
 moving away from a gravitational source, it's gravitational energy density diminishes and light speed increases.
 
@@ -48,8 +45,6 @@ E = mc^2
 
 would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
 
-
-
 I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be "buoy analogy".
 
 
@@ -61,7 +56,7 @@ I don't know of a material or method (hopefully, yet) that could take advantage 
     * dielectric constant K seems to be p^2 where p is energy density of space;
     * $c = c_o/\sqrt{p^2}$
     * $p = p* + p_{earth} + p_{moon} + ...$
-    * however a hypothesis is to instead use the Barycenter of the Solar System to calculate gravitational influence from the center of mass
+    * however a hypothesis is to instead use the Barycenter [^barycenter] of the Solar System to calculate gravitational influence from the center of mass
       * see [Is it possible to calculate the barycenter of a planet with several moons](https://qr.ae/ps6SQe)
         * (this should be already available)
 
@@ -118,6 +113,10 @@ Michelson-Morley Null Result" https://osf.io/preprints/osf/vkb2z
 
 [^daily_variations_rg]: "Daily variations of the amplitude of the fringe shifts observed when an air-glass Mach-Zehnder type interferometer is rotated" https://www.researchgate.net/publication/369529273_Daily_variations_of_the_amplitude_of_the_fringe_shifts_observed_when_an_air-glass_Mach-Zehnder_type_interferometer_is_rotated
 
-[^modern_fizeau_experiment]: "" http://labs.plantbio.cornell.edu/wayne/pdfs/FIZEAU.pdf
+[^modern_fizeau_experiment]: A moderm replication of the classical Fizeau experiment, clearly showing that the results can be explained by Galilean/classical physics of waves/Doppler http://labs.plantbio.cornell.edu/wayne/pdfs/FIZEAU.pdf
 
 [^de_witte_coaxial_xch]: "The Roland De Witte 1991 Detection of Absolute Motion and Gravitational Waves" https://arxiv.org/abs/physics/0608205 An Rodriguez at the moment of this writing distances himself from the notion of "absolute movement". It may or may not exist; however the evidence I've seen only points to a signal traveling through a medium. In that respect, An Rodriguez does not rules out a mixture of media and waves as a practical explanation of the phisicality of all-there-is (doppler~galilean). There is no reason to believe - other than reasonable assumption - that there is no more detail to it.
+
+[^barycenter]: `In astronomy, the barycenter (or barycentre; from Ancient Greek βαρύς (barús) 'heavy', and κέντρον (kéntron) 'center')[1] is the center of mass of two or more bodies that orbit one another and is the point about which the bodies orbit. A barycenter is a dynamical point, not a physical object. It is an important concept in fields such as astronomy and astrophysics. The distance from a body's center of mass to the barycenter can be calculated as a two-body problem. ` https://en.wikipedia.org/wiki/Barycenter_(astronomy)
+
+[^fresnels_drag_from_sr_mathpages]: Fresnel's drag can be derived as an approximation to Special Relativity https://www.mathpages.com/home/kmath702/kmath702.htm
