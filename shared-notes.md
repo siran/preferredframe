@@ -11,7 +11,7 @@ The idea is to explore the vast information we've shared over email.
 - [next steps](#next-steps)
   - [analyze frequencies of data](#analyze-frequencies-of-data)
 - [Pet Projects:](#pet-projects)
-  - [Electro Magetic Compass keychain](#electro-magetic-compass-keychain)
+  - [Electro Magnetic Compass keychain](#electro-magnetic-compass-keychain)
   - [Energy generation using our movement relative to the medium](#energy-generation-using-our-movement-relative-to-the-medium)
   - [Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity](#energy-generation-using-the-hypothesis-that-light-speed-changes-with-a-dielectric-medium-as-gravity)
   - [Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)](#casimir-force-driven-motor-force-felt-by-to-parallel-conducting-plantes-when-brought-close-to-each-other)
@@ -22,10 +22,33 @@ The idea is to explore the vast information we've shared over email.
 
 # Main ideas
 ## Doppler explains everything
-* Doppler explain MM experiment
-* Doppler explains Figure 5 of An's Research Gate
+* Doppler explains the M&M experiment [^mm_doppler_osf]
+* Doppler explains Figure 5 of An's Research Gate [^daily_variations_rg]
+
+### Modern repetition of the Fizeau experiment
+see [^modern_fizeau_experiment], mostly Figure 10
 
 ## Gravity as Dielectric
+
+### questions
+* why does a changing speed of light is experienced as a (gravitational) force?
+
+moving away from a gravitational source, it's gravitational energy density diminishes and light speed increases.
+
+a daily change in the maximum amplitude of the average of rotations (Fig 6 of [^daily]) means light is changing speed by 30%.
+
+That means an increase in energy of everything.
+
+Although this equation can't be trusted a priori withough further research with new hypothesis, at face value,
+
+E = mc^2
+
+would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
+
+I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be "buoy analogy".
+
+
+### Introduction
 * There seems to be a medium that support light waves.
 * The medium seems to be affected by energy density
   * in particular, gravitational energy density
@@ -37,7 +60,7 @@ The idea is to explore the vast information we've shared over email.
       * see [Is it possible to calculate the barycenter of a planet with several moons](https://qr.ae/ps6SQe)
         * (this should be already available)
 
-## we just need to convince ourselves
+## We just need to convince ourselves
 It is indeed difficult to convince the community as a whole since many (not all) are more interested in proving us wrong than to help us being right.
 
 Others don't see it.
@@ -48,9 +71,9 @@ There should be a simple principle or effect that could prove first to us, witho
 
 See for example (electro-magetic-compass-keychain)[(#electro-magetic-compass-keychain)
 
-# next steps
+# Next steps
 
-## analyze frequencies of data
+## Analyze frequencies of data
 
 # Pet Projects:
 
@@ -73,8 +96,23 @@ I was thinking in a floating needle in the middle of a container.
     * earth-moon
     * earth-sun-moon
 
-## measure one-way speed of light
+## Measure one-way speed of light
 * we can use Intensity of power measured as a proxy to distance traveled by light , $\displaystyle I \propto \frac{1}{r^2}$
 * intensity can be measured consecutively at the receiver's end, it should drop as $1/r^2$; can one way speed of light be inferred this way?
 
 ## Use 3b1b's library to do simulations of our measurements
+
+## Replicate de Witte's experiment with optic cables
+ Roland De Witte's experiment [^de_witte_coaxial_xch]
+
+---
+### References
+
+[^mm_doppler_osf]: "Classical Doppler Shift Explains the
+Michelson-Morley Null Result" https://osf.io/preprints/osf/vkb2z
+
+[^daily_variations_rg]: "Daily variations of the amplitude of the fringe shifts observed when an air-glass Mach-Zehnder type interferometer is rotated" https://www.researchgate.net/publication/369529273_Daily_variations_of_the_amplitude_of_the_fringe_shifts_observed_when_an_air-glass_Mach-Zehnder_type_interferometer_is_rotated
+
+[^modern_fizeau_experiment]: "" http://labs.plantbio.cornell.edu/wayne/pdfs/FIZEAU.pdf
+
+[^de_witte_coaxial_xch]: "The Roland De Witte 1991 Detection of Absolute Motion and Gravitational Waves" https://arxiv.org/abs/physics/0608205 An Rodriguez at the moment of this writing distances himself from the notion of "absolute movement". It may or may not exist; however the evidence I've seen only points to a signal traveling through a medium. In that respect, An Rodriguez does not rules out a mixture of media and waves as a practical explanation of the phisicality of all-there-is (doppler~galilean). There is no reason to believe - other than reasonable assumption - that there is no more detail to it.
