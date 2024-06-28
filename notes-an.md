@@ -45,7 +45,9 @@ E = mc^2
 
 would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
 
-I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be "buoy analogy".
+This seems to the "buoy analogy".
+
+~I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy.~
 
 
 ### Introduction
