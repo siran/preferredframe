@@ -43,7 +43,7 @@ Although this equation can't be trusted a priori withough further research with 
 
 E = mc^2
 
-would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
+would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=0.69$.
 
 This seems to the "buoy analogy".
 
