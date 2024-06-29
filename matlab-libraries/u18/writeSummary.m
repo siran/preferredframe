@@ -3,19 +3,7 @@ function writeSummary(varargin)
 
 summary_path = 'D:\Users\an\experimento-usb-interferometro\analysis-summaries\';
 
-% % % % % % % % % % % % % % % % % % % % % % % % % % 
-stars = {'HIP54589', 'Sun', 'Moon', 'Jupiter', 'Venus', 'Mars'};
-colors = { ...
-    [0.0, 0.0, 1.0],    ... % Blue for HIP54589
-    [1.0, 1.0, 0.0],    ... % Yellow for Sun
-    [0.0, 0.0, 0.0],    ... % Black for Moon
-    [0.6, 0.3, 0.0],    ... % Brown for Jupiter
-    [0.7, 0.7, 0.7],    ... % Light Gray for Venus
-    [1.0, 0.0, 0.0]     ... % Red for Mars
-};
-masses = {nan, 1.98885E30, 7.3477E22, 1.898E27, 4.867E24, 6.39E23};
-G = 0.000000000066743;
-% % % % % % % % % % % % % % % % % % % % % % % % % % %
+get_star_info
 
 nVarargs = length(varargin);
 for k = 1:2:nVarargs
@@ -103,24 +91,24 @@ for j=1:size(YY,1)
 
     if exist('timeAltitude', 'var') && ~isempty(timeAltitude)
         % Loop though all stellar object       
-        for starname_i = 1:length(stars)
-            fieldname = ['altitude_' stars{starname_i}];
+        for starname_i = 1:length(star_info.stars)
+            fieldname = ['altitude_' star_info.stars{starname_i}];
             disp(['Calculating altitude for: ' fieldname]);
             disp(['timeAltitude size: ' num2str(size(timeAltitude))]);
             disp(['timeAltitude(:,1,starname_i) size: ' num2str(size(timeAltitude(:,1,starname_i)))]);
             summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,2,starname_i), XX(j));
-            fieldname = ['azimuth_' stars{starname_i}];
+            fieldname = ['azimuth_' star_info.stars{starname_i}];
             disp(['Calculating azimuth for: ' fieldname]);
             summary(i).(fieldname) = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,3,starname_i), XX(j));
       
             if size(timeAltitude,2) > 3
-                fieldname = ['distance_km_' stars{starname_i}];
+                fieldname = ['distance_km_' star_info.stars{starname_i}];
                 distance_km = pchip(timeAltitude(:,1,starname_i), timeAltitude(:,4,starname_i), XX(j));
                 summary(i).(fieldname) = distance_km;
 
-                fieldname = ['p_inv_' stars{starname_i}];
-                mass_i = masses{starname_i};
-                e_density_inv = 1/(G*mass_i^2/(8*pi*(distance_km*1E3)^4));
+                fieldname = ['p_inv_' star_info.stars{starname_i}];
+                mass_i = star_info.masses{starname_i};
+                e_density_inv = 1/(star_info.G*mass_i^2/(8*pi*(distance_km*1E3)^4));
                 summary(i).(fieldname) = e_density_inv;
 
             end

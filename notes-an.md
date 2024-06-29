@@ -1,22 +1,25 @@
 # Notes on a preferred frame (medium for light)
 ------------------------------------
 
-The idea is to explore the vast information we've shared over email.
-
 - [Notes on a preferred frame (medium for light)](#notes-on-a-preferred-frame-medium-for-light)
 - [Main ideas](#main-ideas)
   - [Doppler explains everything](#doppler-explains-everything)
+    - [Modern repetition of the Fizeau experiment](#modern-repetition-of-the-fizeau-experiment)
   - [Gravity as Dielectric](#gravity-as-dielectric)
-  - [we just need to convince ourselves](#we-just-need-to-convince-ourselves)
-- [next steps](#next-steps)
-  - [analyze frequencies of data](#analyze-frequencies-of-data)
+    - [questions](#questions)
+    - [Introduction](#introduction)
+  - [We just need to convince ourselves](#we-just-need-to-convince-ourselves)
+- [Next steps](#next-steps)
+  - [Analyze frequencies of data](#analyze-frequencies-of-data)
 - [Pet Projects:](#pet-projects)
   - [Electro Magnetic Compass keychain](#electro-magnetic-compass-keychain)
   - [Energy generation using our movement relative to the medium](#energy-generation-using-our-movement-relative-to-the-medium)
   - [Energy generation using the hypothesis that light speed changes with a dielectric medium as gravity](#energy-generation-using-the-hypothesis-that-light-speed-changes-with-a-dielectric-medium-as-gravity)
   - [Casimir-force-driven motor (force felt by to parallel conducting plantes when brought close to each other)](#casimir-force-driven-motor-force-felt-by-to-parallel-conducting-plantes-when-brought-close-to-each-other)
-  - [measure one-way speed of light](#measure-one-way-speed-of-light)
+  - [Measure one-way speed of light](#measure-one-way-speed-of-light)
   - [Use 3b1b's library to do simulations of our measurements](#use-3b1bs-library-to-do-simulations-of-our-measurements)
+  - [Replicate de Witte's experiment with fiber optic cables](#replicate-de-wittes-experiment-with-fiber-optic-cables)
+    - [References](#references)
 
 
 
@@ -41,11 +44,11 @@ That means an increase in energy of everything.
 
 Although this equation can't be trusted a priori withough further research with new hypothesis, at face value,
 
-E = mc^2
+$E = mc^2$
 
-would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$.
+would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$. Hard to believe.
 
-I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be "buoy analogy".
+I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be the "buoy analogy".
 
 
 ### Introduction
@@ -102,7 +105,7 @@ I was thinking in a floating needle in the middle of a container.
 
 ## Use 3b1b's library to do simulations of our measurements
 
-## Replicate de Witte's experiment with optic cables
+## Replicate de Witte's experiment with fiber optic cables
  Roland De Witte's experiment [^de_witte_coaxial_xch]
 
 ---

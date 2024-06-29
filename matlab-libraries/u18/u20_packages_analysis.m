@@ -111,7 +111,7 @@ for sindex=1:size(process_sessions, 1)
             fprintf('usb_sessions(%d) is empty. continue.\n', uindex)
             continue
         end
-        fprintf('    %s =? %s\n', usb_sessions(uindex).name, process_sessions{sindex,:})
+        % fprintf('    %s =? %s\n', usb_sessions(uindex).name, process_sessions{sindex,:})
         if ~ strcmp(usb_sessions(uindex).name, process_sessions{sindex,:})
             continue
         end
