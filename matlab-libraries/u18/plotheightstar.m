@@ -15,24 +15,12 @@ if exist('timeAltitude') && ~isempty(timeAltitude)
     vertical_steps = -90:180/20:90;
     ylabel(['Altitude(°)'])
 
-    % % % % % % % % % % % % % % % % % % % % % % % % % % 
-    stars = {'HIP54589', 'Sun', 'Moon', "Jupiter", "Venus", "Mars"};
-    colors = { ...
-        [0.0, 0.0, 1.0],    ... % Blue for HIP54589
-        [1.0, 1.0, 0.0],    ... % Yellow for Sun
-        [0.0, 0.0, 0.0],    ... % Black for Moon
-        [0.6, 0.3, 0.0],    ... % Brown for Jupiter
-        [0.7, 0.7, 0.7],    ... % Light Gray for Venus
-        [1.0, 0.0, 0.0]     ... % Red for Mars
-    };
-    masses = {nan, 1.98885E30, 7.3477E22, 1.898E27, 4.867E24, 6.39E23};
-    G = 0.000000000066743;
-    % % % % % % % % % % % % % % % % % % % % % % % % % % % 
-
+    get_star_info
+    
     plot_handles = gobjects(size(timeAltitude,3), 1); % Preallocate handles
 
-    for starname_i = 1:numel(stars)
-        starname = stars{starname_i};
+    for starname_i = 1:numel(star_info.stars)
+        starname = star_info.stars{starname_i};
         if ax.XLim == [0 360]
             x = 0:360;
             % if strcmp(starname, 'HIP54589')
@@ -93,11 +81,12 @@ if exist('timeAltitude') && ~isempty(timeAltitude)
             % end
         end
         plot_handles(starname_i) = plot(x, y, '.', ...
-            'Color', colors{starname_i}, ...
-            'LineStyle', '-', ...
-            'LineWidth', 3);
+            'Color', star_info.colors{starname_i}, ...
+            'LineStyle', star_info.linestyles{starname_i}, ...
+            'LineWidth', 1, ...
+            'Marker', star_info.markers{starname_i});
     end
-    legend(plot_handles, stars); % Use plot handles in legend
+    legend(plot_handles, star_info.stars); % Use plot handles in legend
     yyaxis left
     if holdStatus
         hold on

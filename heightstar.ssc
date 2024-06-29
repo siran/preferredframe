@@ -65,15 +65,17 @@ for (k=0; k<object_infos.length; k++) {
 			core.resetOutput()
 			for (i=0; i<ciclos; i++) {
 				date = core.getDate()
-				map=core.getObjectInfo(object_info)
-				core.output(date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
+				map = core.getObjectInfo(object_info)
+				line = date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"]
+				// core.output(line)
 				if (i == 0) {
 					core.debug(output_fname)
-					core.debug("TEST LINE: " + date + ",Az,Alt," + map["azimuth-geometric"] + "," + map["altitude-geometric"] + ",dkm," + map["distance-km"])
+					core.debug("TEST LINE: " + line)
+					core.exit()
 				}
-				if (i % 100 == 0) {
-					//core.debug(object_info + ": " + year + "-" + month + " - " + i + "/" + ciclos )
-				}
+				//if (i % 100 == 0) {
+				//	core.debug(object_info + ": " + year + "-" + month + " - " + i + "/" + ciclos )
+				//}
 				core.setDate("+"+minutos_medida+" minutes", "UTC")
 				core.wait(waittime);
 
