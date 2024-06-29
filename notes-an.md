@@ -46,9 +46,17 @@ Although this equation can't be trusted a priori withough further research with 
 
 $E = mc^2$
 
+<<<<<<< HEAD
 would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=1.69$. Hard to believe.
 
 I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy. This seems to be the "buoy analogy".
+=======
+would imply change of $\Delta E=E_2-E_1=m(1.3^2-1)=0.69$.
+
+This seems to the "buoy analogy".
+
+~I don't know of a material or method (hopefully, yet) that could take advantage of this change in energy.~
+>>>>>>> 36e405d2e16dea2f28f6022287a4328ff707ecb9
 
 
 ### Introduction
@@ -107,6 +115,7 @@ I was thinking in a floating needle in the middle of a container.
 
 ## Replicate de Witte's experiment with fiber optic cables
  Roland De Witte's experiment [^de_witte_coaxial_xch]
+ I believe this has already been done and reported for a M&M setup.
 
 ---
 ### References
