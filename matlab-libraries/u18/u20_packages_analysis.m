@@ -185,6 +185,7 @@ for sindex=1:size(process_sessions, 1)
         force_reprocess = processing_session.force_reprocess;
 
         u18w_general
+        a=1
     end
 end
 
