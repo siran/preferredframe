@@ -26,11 +26,16 @@ for wsi = 1:length(workspaces)
     if exist(fconf, "file")
         conf = readtable(fconf);   
         p_struct(wsi).p = p_adjusted_orig(:, conf.lineaPreferida);
-        p_struct(wsi).linea_preferida = p_adjusted_orig(:, conf.lineaPreferida);
+
+        p_struct(wsi).lineaPreferida = conf.lineaPreferida;
+        p_struct(wsi).lineaPreferidaAdjunta = conf.lineaPreferidaAdjunta;
+        
+        p_struct(wsi).p_lineaPreferida = p_adjusted_orig(:, conf.lineaPreferida);
         p_struct(wsi).linea_preferidaAdjunta = p_adjusted_orig(:, conf.lineaPreferidaAdjunta);
     end
 
     p_struct(wsi).p_all = p_adjusted_orig;
+    p_struct(wsi).p_orig = p_orig;
     p_struct(wsi).xts = xts;
     p_struct(wsi).size = length(xts);
 
@@ -39,3 +44,4 @@ for wsi = 1:length(workspaces)
     % refresh
     % a=1:
 end
+
