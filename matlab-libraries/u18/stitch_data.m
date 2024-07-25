@@ -38,6 +38,7 @@ for wsi = 1:length(workspaces)
     p_struct(wsi).p_orig = p_orig;
     p_struct(wsi).xts = xts;
     p_struct(wsi).size = length(xts);
+    p_struct(wsi).orientacion = orientacion;
 
     % plot(p_struct(wsi).xts, p_struct(wsi).p_all);
 
