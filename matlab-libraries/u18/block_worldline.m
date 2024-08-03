@@ -1,23 +1,45 @@
 % extracts a fixed block of pixels from a series of pictures
 
+
+ti = 21;
+tf = 28;
+for tday=ti:tf
+    
+session_date = ['2020-02-' int2str(tday)];
+fprintf('tday: %d/%d, %s', tday, tf, session_date)
+
+
 % clc
+clearvars a* -except session_date tday tf
 warning('off', 'imageio:tifftagsread:expectedTagDataFormat')
 
-% block coordinates
-y1 = 600;
-y2 = 1280;
-x1 = 142;
-x2 = 720;
+% rotation angle of pic to align horizontally
+rotation_angle = -12;
+
+% block coordinates (after rotation)
+y1 = 1092;
+y2 = 1111;
+x1 = 360;
+x2 = 685;
+
+
+
+block_size = (x2-x1) * (y2-y1);
+fprintf('block_size: %d\n', block_size)
+
+
+% data_timelimit_h = 1;
 
 pictures_base_folder = 'D:\Users\an\experimento-usb-interferometro\tobo-ordenado'
-pictures = dir([pictures_base_folder '\2020-02-20\**\*.jpg']);
+pictures = dir([pictures_base_folder '\' session_date '\**\*.jpg']);
 % workspace_folder = 'D:\Users\an\experimento-usb-interferometro\u18_workspaces';
 % workspaces = dir([workspace_folder '\wn2002??_????-adjusted_orig.mat']);
 
 num_pics = length(pictures);
 
-% reducing to at most 4 hours of pictures 
-num_pics = min(12*60*20,length(pictures));
+% reducing to at most data_timelimit_h hours of pictures 
+% data_timelimit_h = 1;
+% num_pics = min(data_timelimit_h*60*20, num_pics);
 
 fprintf('Number of pictures %d \n', num_pics)
 
@@ -28,6 +50,7 @@ angles = nan(num_pics, 1);
 % figure 
 % hold on
 tic;
+h = figure;
 for pic_i = 1:num_pics
     if mod(pic_i, 300) == 0 || pic_i == 1
         fprintf('i:%d elapsed: %1.0fs remaining: %1.1fs or %1.1fmin \n', ...
@@ -39,6 +62,9 @@ for pic_i = 1:num_pics
     [pic, map]= imread(pic_fullname);
     pic = rgb2gray(pic);
     % pic = imadjust(pic);
+   
+    % rotate image to make it easy to extract information
+    pic = imrotate(pic, rotation_angle);
 
     info = imfinfo(pic_fullname);
     date = info.DigitalCamera.DateTimeOriginal;    
@@ -47,18 +73,30 @@ for pic_i = 1:num_pics
         pic = pic';
     end    
     
-    % figure
+    % show picture
     % imshow(pic) 
-    % block = pic(y1:y2, x1:x2);
+    % draw coordinates of block on top of picture
     % hold on
-    % line([x1 x2], [y1, y2])
-    % figure
-    % imshow(block)
+    % line([x1 x2], [y1, y2])    
 
-    % blocks average intensity
-    average_intensity = sum(sum(pic(y1:y2, x1:x2)))/prod(size(pic(y1:y2, x1:x2)));
+    % select portion of picture
+    block = pic(y1:y2, x1:x2);
 
-    worldline(pic_i, :) = 255 - average_intensity;
+    % for debugging, adjust intensity
+    if pic_i == 1        
+        % adjustment 
+        intensity_adjustment = 4;
+    end    
+    block = block.*intensity_adjustment;
+
+    % show block (adds like 20min to process, good to debug)
+    % imshow(block);
+    
+    % calculates value based on block
+    block_val = sum(sum(block));
+
+    % build wordline of block: calculated value, angle, timestamp
+    worldline(pic_i, :) = block_val;
     timestamps(pic_i, :) = datenum(date,'yyyy:mm:dd HH:MM:SS');
     if isfield(info.GPSInfo, 'GPSImgDirection')
         angles(pic_i) = info.GPSInfo.GPSImgDirection;
@@ -66,10 +104,22 @@ for pic_i = 1:num_pics
 
 end
 
-worldline(worldline>235)=nan;
+o = struct();
+o.timestamp = timestamps;
+o.timestamp_str = datestr(timestamps);
+o.angles = angles;
+o.worldline = worldline;
 
-xlabel('Time');
-set(gca,'XMinorTick','on')
-datetick('x', 'dd/mm HH:MM','keeplimits')
+o.worldline(o.worldline < 1e5) = nan;
+T = struct2table(o);
+writetable(T,['worldline-' session_date '.csv']);
+end
 
-plot(timestamps, worldline)
+% plot(o.timestamp, o.worldline)
+% set(gca,'XMinorTick','on')
+% datetick('x', 'dd/mm HH:MM','keeplimits')
+
+% xlabel('Time');
+% legend('Intensity of fixed region of picture')
+% title('Intensity of fixed region of pictures vs time')
+
