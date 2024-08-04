@@ -90,16 +90,22 @@ o.timestamp_str = datestr(timestamps);
 % o.angles = angles;
 o.worldline = worldline;
 
-o.worldline(o.worldline < 1e5) = nan;
-T = struct2table(o);
-writetable(T,['worldline-' session_date '.csv']);
+% T = struct2table(o);
+% writetable(T,['worldline-' session_date '.csv']);
 % end
 
-plot(o.timestamp, o.worldline)
-set(gca,'XMinorTick','on')
-datetick('x', 'dd/mm HH:MM','keeplimits')
+wlrs = reshape(o.worldline', [], 1);
+wlrs(wlrs<650) = nan;
+wlrs(wlrs>800) = nan;
 
-xlabel('Time');
-legend('Intensity of fixed region of picture')
-title('Intensity of fixed region of pictures vs time')
+% plot(o.timestamp, o.worldline)
+% set(gca,'XMinorTick','on')
+% datetick('x', 'dd/mm HH:MM','keeplimits')
+
+plot(wlrs,'.')
+
+title('speed of electricy')
+xlabel('almost 24h')
+ylabel('nanoseconds delay between two cables')
+ylabel('delay between two cables (nanoseconds)')
 
