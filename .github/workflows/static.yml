@@ -24,6 +24,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build site
+        env:
+          GITHUB_USER: ${{ github.repository_owner }}
+          REPO_NAME:  ${{ github.event.repository.name }}
+          GH_BRANCH:  ${{ github.ref_name }}   # or 'main' if you always deploy main
         run: python3 src/build_site.py
 
       - name: Upload Pages artifact
