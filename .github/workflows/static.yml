@@ -3,9 +3,6 @@ name: Build & deploy site
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'prints/**'
-      - 'src/**'
   workflow_dispatch: {}
 
 permissions:
