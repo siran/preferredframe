@@ -11,7 +11,7 @@ OUTD    = REPO / "site"
 PRINTS  = REPO / "prints"
 
 # ---------- Public domain & GitHub repo ----------
-BASE_URL    = "https://preferredframe.com"  # human-friendly, no encoding
+BASE_URL    = os.getenv("BASE_URL", "http://127.0.0.1:8000").rstrip("/")  # e.g. "https://preferredframe.com"
 GITHUB_USER = os.getenv("GITHUB_USER", "siran")
 REPO_NAME   = os.getenv("REPO_NAME", "preferredframe")
 GH_BRANCH   = os.getenv("GH_BRANCH", "main")
@@ -92,32 +92,45 @@ def render_root_markdown(items):
         lines.append("> No prints yet.")
         return "\n".join(lines)
     for it in items[:10]:
-        # link to the folder page that we will generate
         lines.append(f"- [{it['title']}]({BASE_URL}/prints/{it['folder'].name}/)")
     return "\n".join(lines)
 
 def render_folder_markdown(folder: Path):
-    """Markdown list of files in a folder, with preferredframe.com links to stubs."""
+    """Markdown for a folder: heading + 'Available files' + one link per line."""
     mds  = sorted([p for p in folder.iterdir() if is_md(p) and p.name.lower() != "readme.md"])
     pdfs = {p.stem: p for p in folder.iterdir() if is_pdf(p)}
 
     if not mds:
         return "> No markdown files found."
-    lines = [f"# {folder.name}", "", "## Files", ""]
+
+    # Use the first MD's title as the page title
+    title = read_title(mds[0])
+
+    lines = [
+        f"## {title}",
+        "",
+        "Available files:",
+        ""
+    ]
+
     for md in mds:
-        # preferredframe.com stub links (human-readable)
         rel_md  = md.relative_to(PRINTS).as_posix()                         # e.g., Folder/File.md
         url_md  = f"{BASE_URL}/prints/{rel_md}"                             # -> stub: redirects to GitHub RAW
         url_md_ui = f"{BASE_URL}/prints/{rel_md}.github"                    # -> stub: redirects to GitHub BLOB
 
-        pdf_part = ""
-        if md.stem in pdfs:
-            rel_pdf = pdfs[md.stem].relative_to(PRINTS).as_posix()         # e.g., Folder/File.pdf
-            url_pdf = f"{BASE_URL}/prints/{rel_pdf}"                        # -> stub: redirects to GitHub RAW PDF
-            pdf_part = f" • [PDF]({url_pdf})"
+        lines.append(f"[Markdown]({url_md})")
+        lines.append("")  # blank line
+        lines.append(f"[Markdown (GitHub)]({url_md_ui})")
 
-        lines.append(f"- **{md.stem}** — [Markdown]({url_md}) • [Markdown (GitHub)]({url_md_ui}){pdf_part}")
-    return "\n".join(lines)
+        if md.stem in pdfs:
+            rel_pdf = pdfs[md.stem].relative_to(PRINTS).as_posix()
+            url_pdf = f"{BASE_URL}/prints/{rel_pdf}"                        # -> stub: redirects to GitHub RAW PDF
+            lines.append("")
+            lines.append(f"[PDF]({url_pdf})")
+
+        lines.append("")  # spacer between entries (if multiple)
+
+    return "\n".join(lines).rstrip() + "\n"
 
 # ---------- Redirect stubs ----------
 def make_redirect_stub(path: Path, target_url: str, label: str):
@@ -193,9 +206,7 @@ def build():
 
     # Folder pages + stub trees
     for folder in collect_folders():
-        # Per-folder index (styled via coda)
         sandwich_write(OUTD / "prints" / folder.name / "index.html", render_folder_markdown(folder))
-        # Redirect stubs for files
         create_stubs_for_folder(folder)
 
 if __name__ == "__main__":
