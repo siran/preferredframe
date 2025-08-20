@@ -10,11 +10,23 @@ SRC     = REPO / "src"
 OUTD    = REPO / "site"
 PRINTS  = REPO / "prints"
 
-# ---------- Public domain & GitHub repo ----------
-BASE_URL    = os.getenv("BASE_URL", "http://127.0.0.1:8000").rstrip("/")  # e.g. "https://preferredframe.com"
+# ---------- Repo identity ----------
 GITHUB_USER = os.getenv("GITHUB_USER", "siran")
 REPO_NAME   = os.getenv("REPO_NAME", "preferredframe")
 GH_BRANCH   = os.getenv("GH_BRANCH", "main")
+
+def compute_base_url() -> str:
+    # 1) Explicit override
+    v = os.getenv("BASE_URL")
+    if v:
+        return v.rstrip("/")
+    # 2) On GitHub Actions (Pages build), prefer github.io canonical URL
+    if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
+        return f"https://{GITHUB_USER}.github.io/{REPO_NAME}"
+    # 3) Local/dev default
+    return "http://127.0.0.1:8000"
+
+BASE_URL = compute_base_url()
 
 # ---------- Helpers ----------
 def now_nyc() -> str:
@@ -103,33 +115,25 @@ def render_folder_markdown(folder: Path):
     if not mds:
         return "> No markdown files found."
 
-    # Use the first MD's title as the page title
     title = read_title(mds[0])
-
-    lines = [
-        f"## {title}",
-        "",
-        "Available files:",
-        ""
-    ]
+    lines = [f"## {title}", "", "Available files:", ""]
 
     for md in mds:
-        rel_md  = md.relative_to(PRINTS).as_posix()                         # e.g., Folder/File.md
-        url_md  = f"{BASE_URL}/prints/{rel_md}"                             # -> stub: redirects to GitHub RAW
-        url_md_ui = f"{BASE_URL}/prints/{rel_md}.github"                    # -> stub: redirects to GitHub BLOB
+        rel_md   = md.relative_to(PRINTS).as_posix()                  # e.g., Folder/File.md
+        url_md   = f"{BASE_URL}/prints/{rel_md}"                      # stub -> GitHub RAW
+        url_mdui = f"{BASE_URL}/prints/{rel_md}.github"               # stub -> GitHub BLOB
 
         lines.append(f"[Markdown]({url_md})")
-        lines.append("")  # blank line
-        lines.append(f"[Markdown (GitHub)]({url_md_ui})")
+        lines.append("")
+        lines.append(f"[Markdown (GitHub)]({url_mdui})")
 
         if md.stem in pdfs:
             rel_pdf = pdfs[md.stem].relative_to(PRINTS).as_posix()
-            url_pdf = f"{BASE_URL}/prints/{rel_pdf}"                        # -> stub: redirects to GitHub RAW PDF
+            url_pdf = f"{BASE_URL}/prints/{rel_pdf}"                  # stub -> GitHub RAW PDF
             lines.append("")
             lines.append(f"[PDF]({url_pdf})")
 
-        lines.append("")  # spacer between entries (if multiple)
-
+        lines.append("")  # spacer
     return "\n".join(lines).rstrip() + "\n"
 
 # ---------- Redirect stubs ----------
@@ -161,20 +165,17 @@ def create_stubs_for_folder(folder: Path):
             raw_md  = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{GH_BRANCH}/{rel_md_repo}"
             blob_md = f"https://github.com/{GITHUB_USER}/{REPO_NAME}/blob/{GH_BRANCH}/{rel_md_repo}"
 
-            # stub for Markdown (raw) at /prints/.../File.md
             make_redirect_stub(
                 OUTD / "prints" / folder.name / f"{f.name}" / "index.html",
                 raw_md,
                 f"{f.name} (raw)"
             )
-            # stub for Markdown (GitHub) at /prints/.../File.md.github
             make_redirect_stub(
                 OUTD / "prints" / folder.name / f"{f.name}.github" / "index.html",
                 blob_md,
                 f"{f.name} (GitHub)"
             )
 
-            # optional PDF sibling
             pdf = f.with_suffix(".pdf")
             if pdf.exists():
                 rel_pdf_repo = (REPO / "prints" / pdf.relative_to(PRINTS)).relative_to(REPO).as_posix()
@@ -186,7 +187,6 @@ def create_stubs_for_folder(folder: Path):
                 )
 
         elif is_pdf(f):
-            # PDF without matching .md
             rel_pdf_repo = (REPO / "prints" / f.relative_to(PRINTS)).relative_to(REPO).as_posix()
             raw_pdf = f"https://github.com/{GITHUB_USER}/{REPO_NAME}/raw/{GH_BRANCH}/{rel_pdf_repo}"
             make_redirect_stub(
