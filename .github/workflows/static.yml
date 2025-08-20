@@ -3,6 +3,10 @@ name: Build & deploy site
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'prints/**'
+      - 'src/**'
+      - '.github/workflows/**'
   workflow_dispatch: {}
 
 permissions:
@@ -24,9 +28,15 @@ jobs:
         run: |
           OWNER="${GITHUB_REPOSITORY%%/*}"
           NAME="${GITHUB_REPOSITORY#*/}"
-          echo "OWNER=$OWNER NAME=$NAME BRANCH=$GITHUB_REF_NAME"
-          GITHUB_USER="$OWNER" REPO_NAME="$NAME" GH_BRANCH="$GITHUB_REF_NAME" python3 src/build_site.py
+          echo "Building for $OWNER/$NAME on $GITHUB_REF_NAME"
+          GITHUB_USER="$OWNER" REPO_NAME="$NAME" GH_BRANCH="$GITHUB_REF_NAME" \
+          CUSTOM_BASE_URL="https://preferredframe.com" \
+            python3 src/build_site.py
 
+      - name: Inspect output
+        run: |
+          head -n 50 site/index.html || true
+          grep -n "preferredframe.com" -R site || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
