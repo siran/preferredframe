@@ -20,7 +20,7 @@ RAW_URL  = f"https://raw.githubusercontent.com/{GITHUB_USER}/{REPO_NAME}/{GH_BRA
 
 def now_iso():
     # New York time
-    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M DST")
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M America/New_York")
 
 def is_dot(name: str) -> bool:
     return name.startswith(".")
@@ -106,14 +106,14 @@ def build():
         md_lines = [
             f"# {it['title']}",
             "",
-            f"- [Markdown raw]({md_raw})",
-            f"- [GitHub view]({md_blob})",
+            f"- [Markdown (raw)]({md_raw})",
+            f"- [Markdown (@GitHub)]({md_blob})",
         ]
         if pdf_link:
             md_lines.append(pdf_link)
 
         md_page = "\n".join(md_lines)
-        page = "\n".join([header, md_page, footer, f"\nupdated: {now_iso()}\n", coda])
+        page = "\n".join([header, md_page, footer, f"\n(updated: {now_iso()})\n", coda])
         (folder_out/"index.html").write_text(page, encoding="utf-8")
 
 if __name__ == "__main__":
