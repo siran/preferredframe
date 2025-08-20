@@ -28,9 +28,8 @@ jobs:
         run: |
           OWNER="${GITHUB_REPOSITORY%%/*}"
           NAME="${GITHUB_REPOSITORY#*/}"
-          echo "Building for $OWNER/$NAME on $GITHUB_REF_NAME"
           GITHUB_USER="$OWNER" REPO_NAME="$NAME" GH_BRANCH="$GITHUB_REF_NAME" \
-          CUSTOM_BASE_URL="https://preferredframe.com" \
+          BASE_URL="https://preferredframe.com" \
             python3 src/build_site.py
 
       - name: Inspect output
