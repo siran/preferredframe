@@ -1,0 +1,132 @@
+name: PNPMD Validate → PDF → Zenodo → Sidecars → Assets
+
+on:
+  pull_request:
+    paths:
+      - 'prints/**.md'
+      - 'src/**'
+  push:
+    tags:
+      - 'prints/**'  # e.g., prints/v2025.08.20-The PNP Description of Energy Flow
+
+jobs:
+  validate_build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y pandoc texlive-xetex
+      - name: Find PNPMD
+        id: findmd
+        run: |
+          set -e
+          MD=$(ls prints/*/*.md | grep -iv '/readme\.md$' | head -n1)
+          echo "md=$MD" >> $GITHUB_OUTPUT
+          echo "pdf=${MD%.md}.pdf" >> $GITHUB_OUTPUT
+      - name: Validate PNPMD
+        run: python3 src/validate_pnpmd.py "${{ steps.findmd.outputs.md }}"
+      - name: Build PDF
+        run: python3 src/make_pdf.py "${{ steps.findmd.outputs.md }}" "${{ steps.findmd.outputs.pdf }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-preview
+          path: |
+            ${{ steps.findmd.outputs.md }}
+            ${{ steps.findmd.outputs.pdf }}
+
+  publish_release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y pandoc texlive-xetex
+      - run: python3 -m pip install --upgrade pip requests pyyaml
+
+      - name: Find PNPMD
+        id: findmd
+        run: |
+          set -e
+          MD=$(ls prints/*/*.md | grep -iv '/readme\.md$' | head -n1)
+          echo "md=$MD" >> $GITHUB_OUTPUT
+          echo "pdf=${MD%.md}.pdf" >> $GITHUB_OUTPUT
+          TITLE=$(python3 - <<'PY'
+from pathlib import Path, sys
+p=Path("${MD}")
+with p.open("r", encoding="utf-8") as f:
+    first=f.readline().strip()
+print(first[2:].strip() if first.startswith("% ") else p.stem)
+PY
+)
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
+      - name: Build PDF
+        run: python3 src/make_pdf.py "${{ steps.findmd.outputs.md }}" "${{ steps.findmd.outputs.pdf }}"
+
+      - name: Publish to Zenodo (concept+version)
+        id: zenodo
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_API_URL: https://zenodo.org/api
+        run: |
+          # Optional: pass --concept "$CONCEPT_DOI" if you track it; else new concept is created
+          OUT=$(python3 src/zenodo_publish.py \
+            --md "${{ steps.findmd.outputs.md }}" \
+            --pdf "${{ steps.findmd.outputs.pdf }}" \
+            --title "${{ steps.findmd.outputs.title }}")
+          echo "$OUT"
+          echo "concept_doi=$(echo "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["concept_doi"])')" >> $GITHUB_OUTPUT
+          echo "version_doi=$(echo "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version_doi"])')" >> $GITHUB_OUTPUT
+          echo "record_url=$(echo "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["record_url"])')" >> $GITHUB_OUTPUT
+          echo "issued=$(echo "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["issued"])')" >> $GITHUB_OUTPUT
+
+      - name: Write per-version sidecar (immutable) + refresh source.yml
+        env:
+          BASE_URL: ${{ vars.BASE_URL }}  # set to https://preferredframe.com in repo/org vars
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 src/write_version_sidecar.py \
+            "${{ steps.findmd.outputs.md }}" \
+            "${{ steps.zenodo.outputs.version_doi }}" \
+            "${{ steps.zenodo.outputs.concept_doi }}" \
+            "${{ steps.zenodo.outputs.record_url }}"
+          echo "Sidecars written."
+
+      - name: Commit sidecars back to repo
+        run: |
+          git config user.name  "preferredframe-bot"
+          git config user.email "bot@preferredframe.com"
+          git add prints/**/versions/*.yml prints/**/source.yml || true
+          git commit -m "Add version sidecar(s) and refresh source.yml" || echo "No changes"
+          git push || true
+
+      - name: Push PDF + sidecar to siran/assets
+        env:
+          ASSETS_PAT: ${{ secrets.ASSETS_PAT }}
+        run: |
+          set -e
+          TITLE="${{ steps.findmd.outputs.title }}"
+          VERSION_DOI="${{ steps.zenodo.outputs.version_doi }}"
+          DOI_SAFE="${VERSION_DOI//\//_}"
+          SRC_DIR="$(dirname "${{ steps.findmd.outputs.md }}")"
+          DEST_DIR="preferredframe/$TITLE/$DOI_SAFE"
+          git clone "https://${ASSETS_PAT}@github.com/siran/assets.git" assets
+          mkdir -p "assets/$DEST_DIR"
+          cp "${{ steps.findmd.outputs.pdf }}" "assets/$DEST_DIR/${TITLE}.pdf"
+          cp "$SRC_DIR/source.yml" "assets/$DEST_DIR/source.yml"
+          cd assets
+          git config user.name  "preferredframe-bot"
+          git config user.email "bot@preferredframe.com"
+          git add "$DEST_DIR"
+          git commit -m "Add PDF for \"$TITLE\" — $VERSION_DOI"
+          git push
+
+      - name: Rebuild PF site (optional, if this repo hosts PF pages)
+        env:
+          BASE_URL: ${{ vars.BASE_URL }}     # e.g., https://preferredframe.com
+          GITHUB_USER: ${{ github.repository_owner }}
+          REPO_NAME:  ${{ github.event.repository.name }}
+          GH_BRANCH:  ${{ github.ref_name }}
+        run: |
+          python3 src/build_site.py
