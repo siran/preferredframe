@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import os, html, datetime, urllib.parse, subprocess
+import os, subprocess, urllib.parse
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-# ---------- configuration ----------
-# names to exclude (dirs or files)
+# ---------- config ----------
 EXCLUDE_NAMES = {
     "site","venv",".venv","env",".env","node_modules",".git",
     "__pycache__", ".mypy_cache",".pytest_cache",".ruff_cache",".cache",
@@ -30,7 +29,7 @@ def detect_repo_branch():
     repo  = os.getenv("SITE_REPO")
     branch= os.getenv("SITE_BRANCH")
 
-    gh = os.getenv("GITHUB_REPOSITORY")  # "owner/repo" in Actions
+    gh = os.getenv("GITHUB_REPOSITORY")  # "owner/repo"
     if gh and "/" in gh:
         o, r = gh.split("/", 1)
         owner = owner or o
@@ -63,10 +62,10 @@ def detect_repo_branch():
 
 OWNER, REPO, BRANCH = detect_repo_branch()
 
-# ---------- paths & config ----------
-ROOT   = Path(__file__).resolve().parents[1]
-OUT    = ROOT / "site"
-SRC    = ROOT / ".scripts" / "src"  # header/footer/coda live here
+# ---------- paths ----------
+ROOT = Path(__file__).resolve().parents[1]
+OUT  = ROOT / "site"
+SRC  = ROOT / ".scripts" / "src"  # header.html / footer.html / coda.html
 
 # ---------- base url & CNAME ----------
 def compute_base_url() -> str:
@@ -87,11 +86,12 @@ def write_cname_if_custom(base_url: str):
 # ---------- helpers ----------
 def rel(p: Path) -> Path: return p.relative_to(ROOT)
 
-def raw_url(p_from_root: Path) -> str:
-    return f"https://raw.githubusercontent.com/{OWNER}/{REPO}/{BRANCH}/{urllib.parse.quote(p_from_root.as_posix())}"
+# keep spaces visible (no encoding)
+def raw_url(relpath: Path) -> str:
+    return f"https://raw.githubusercontent.com/{OWNER}/{REPO}/{BRANCH}/{relpath.as_posix()}"
 
-def blob_url(p_from_root: Path) -> str:
-    return f"https://github.com/{OWNER}/{REPO}/blob/{BRANCH}/{urllib.parse.quote(p_from_root.as_posix())}"
+def blob_url(relpath: Path) -> str:
+    return f"https://github.com/{OWNER}/{REPO}/blob/{BRANCH}/{relpath.as_posix()}"
 
 def prune_dirs(root: str, dirnames: list[str]):
     keep=[]
@@ -102,6 +102,9 @@ def prune_dirs(root: str, dirnames: list[str]):
         keep.append(d)
     dirnames[:] = keep
 
+def load_text(p: Path) -> str:
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
 @dataclass
 class Item:
     name: str
@@ -109,20 +112,16 @@ class Item:
     mtime: float
     path: Path
 
-# ---------- sandwich writer (markdown-ish HTML) ----------
-def load_text(p: Path) -> str:
-    return p.read_text(encoding="utf-8") if p.exists() else ""
-
+# ---------- writer (header + markdown body + footer + coda) ----------
 def write_md_like_page(out_html: Path, md_body: str):
     header = load_text(SRC / "header.html")
     footer = load_text(SRC / "footer.html")
     coda   = load_text(SRC / "coda.html")
-    parts = [header, md_body, footer, coda]
-    html_doc = "\n".join(s.rstrip() for s in parts if s is not None) + "\n"
+    html_doc = "\n".join(s.rstrip() for s in (header, md_body, footer, coda) if s is not None) + "\n"
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(html_doc, encoding="utf-8")
 
-# ---------- page content builders ----------
+# ---------- content (pure Markdown body) ----------
 def breadcrumbs(rel_dir: Path) -> str:
     depth = len(rel_dir.parts)
     to_root = "./" if depth == 0 else "../" * depth
@@ -134,9 +133,9 @@ def breadcrumbs(rel_dir: Path) -> str:
 
 def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     rel_dir = rel(dir_abs) if dir_abs != ROOT else Path()
-    lines = []
     title = (rel_dir.name or f"{REPO} index")
 
+    lines = []
     lines.append(f"## {title}")
     lines.append("")
     lines.append(breadcrumbs(rel_dir))
@@ -145,7 +144,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     items_sorted = sorted(items, key=lambda e: (not e.is_dir, e.name.lower()))
     for it in items_sorted:
         if it.is_dir:
-            href = (rel(it.path).name + "/") if rel_dir.parts else (rel(it.path).as_posix() + "/")
+            href = (it.name + "/") if rel_dir.parts else (rel(it.path).as_posix() + "/")
             lines.append(f"- {it.name}/: [{href}]({href})")
         else:
             p_rel = rel(it.path)
@@ -176,14 +175,12 @@ def main():
         d = Path(dirpath)
         items: list[Item] = []
 
-        # dirs
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
             if p.name.startswith(".") and p.name != ".well-known": continue
             if (p/"pyvenv.cfg").exists(): continue
             items.append(Item(name=p.name, is_dir=True, mtime=p.stat().st_mtime, path=p))
 
-        # files
         for p in sorted([x for x in d.iterdir() if x.is_file() and not x.name.startswith(".")],
                         key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
