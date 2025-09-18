@@ -3,6 +3,8 @@ import os, subprocess, urllib.parse
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # ---------- config ----------
 EXCLUDE_NAMES = {
@@ -114,14 +116,32 @@ class Item:
     mtime: float
     path: Path
 
-# ---------- writer (header + markdown body + footer + coda) ----------
+# ---------- writer (header + markdown body + footer + coda + timestamp) ----------
 def write_md_like_page(out_html: Path, md_body: str):
     header = load_text(SRC / "header.html")
     footer = load_text(SRC / "footer.html")
     coda   = load_text(SRC / "coda.html")
-    html_doc = "\n".join(s.rstrip() for s in (header, md_body, footer, coda) if s is not None) + "\n"
+
+    # Assemble exactly as authored: header + body + footer
+    doc = "".join(s for s in (header, md_body, footer) if s is not None)
+
+    # Timestamp (NY time). Put it immediately after footer, on its own line.
+    ny = ZoneInfo("America/New_York")
+    now = datetime.now(ny)
+    offset = now.utcoffset()
+    hrs = int(offset.total_seconds() // 3600) if offset else 0
+    timestamp = f"(generated at: {now.strftime('%Y-%m-%d %H:%M %Z')} {hrs:+d})"
+
+    if not doc.endswith("\n"):
+        doc += "\n"  # only if needed to start a new line for the timestamp
+    doc += timestamp
+
+    # Append coda exactly as authored (no extra newlines)
+    if coda is not None:
+        doc += coda
+
     out_html.parent.mkdir(parents=True, exist_ok=True)
-    out_html.write_text(html_doc, encoding="utf-8")
+    out_html.write_text(doc, encoding="utf-8")
 
 # ---------- content (pure Markdown body) ----------
 def breadcrumbs(rel_dir: Path) -> str:
