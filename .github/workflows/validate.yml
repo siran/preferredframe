@@ -5,26 +5,22 @@ on:
     paths:
       - 'preferredframe/prints/**/*.md'
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   validate-and-preview:
     runs-on: ubuntu-latest
     container:
       image: pandoc/latex:latest
+
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-
-      - name: Install pandoc-crossref (single binary)
-        run: |
-          set -e
-          VER=0.3.17.0
-          wget -q https://github.com/lierdakil/pandoc-crossref/releases/download/v$VER/pandoc-crossref-Linux.tar.xz
-          tar -xJf pandoc-crossref-Linux.tar.xz
-          install -m 0755 pandoc-crossref /usr/local/bin/pandoc-crossref
-          pandoc-crossref --version
 
       - name: Locate exactly one changed Markdown file
         id: pick
@@ -38,30 +34,25 @@ jobs:
           echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
           [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the PR (got $COUNT)."; exit 1; }
           MD="$FILES"
-          echo "md=$MD"                 >> $GITHUB_OUTPUT
-          echo "pnpmd=${MD%.md}.pnpmd.md"  >> $GITHUB_OUTPUT
-          echo "md_html=${MD%.md}.md.html" >> $GITHUB_OUTPUT
-          echo "html=${MD%.md}.html"       >> $GITHUB_OUTPUT
+          echo "md=$MD"                  >> $GITHUB_OUTPUT
+          echo "pnp_md=${MD%.md}.pnp.md" >> $GITHUB_OUTPUT
+          echo "html=${MD%.md}.html"     >> $GITHUB_OUTPUT
 
       - name: Validate PNPMD
         run: python .scripts/src/validate_pnpmd.py "${{ steps.pick.outputs.md }}"
 
-      - name: Generate PNPMD normalized file
-        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnpmd }}"
+      - name: Generate PNPMD normalized file (.pnp.md)
+        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
 
-      - name: Render md.html (from original .md)
-        run: python .scripts/src/make_html.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.md_html }}"
-
-      - name: Render html (from .pnpmd.md)
-        run: python .scripts/src/make_html.py "${{ steps.pick.outputs.pnpmd }}" "${{ steps.pick.outputs.html }}"
+      - name: Render HTML (from .pnp.md)
+        run: python .scripts/src/make_html.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.html }}"
 
       - name: DOI manifest (primary = original MD)
         run: |
           cat > doi_candidates.json <<JSON
           {
             "primary_md": "${{ steps.pick.outputs.md }}",
-            "normalized_pnpmd": "${{ steps.pick.outputs.pnpmd }}",
-            "review_html_from_md": "${{ steps.pick.outputs.md_html }}",
+            "normalized_pnpmd": "${{ steps.pick.outputs.pnp_md }}",
             "review_html_from_pnpmd": "${{ steps.pick.outputs.html }}"
           }
           JSON
@@ -72,7 +63,25 @@ jobs:
         with:
           name: pnpmd-preview
           path: |
-            ${{ steps.pick.outputs.pnpmd }}
-            ${{ steps.pick.outputs.md_html }}
+            ${{ steps.pick.outputs.pnp_md }}
             ${{ steps.pick.outputs.html }}
             doi_candidates.json
+
+      # Install GitHub CLI inside the container (gh is not preinstalled there)
+      - name: Install GitHub CLI
+        run: |
+          set -e
+          type -p curl >/dev/null || (apt-get update && apt-get install -y curl)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            > /etc/apt/sources.list.d/github-cli.list
+          apt-get update && apt-get install -y gh
+
+      # Enable PR auto-merge (squash) once all required checks pass
+      - name: Enable PR auto-merge (squash) with gh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge --squash --auto "$PR_NUMBER"

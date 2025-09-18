@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
-from pathlib import Path
+"""
+make_html.py: Render Markdown/PNPMD to HTML with pandoc.
+Used for previews and asset generation (from .pnp.md).
+"""
 import sys, subprocess
+from pathlib import Path
 
 def run(cmd): subprocess.run(cmd, check=True)
 
 def main():
-    if len(sys.argv) != 2+1:
-        print("usage: make_html.py input.md output.html", file=sys.stderr); sys.exit(2)
-    md  = Path(sys.argv[1]).resolve()
-    out = Path(sys.argv[2]).resolve()
-    cmd = [
+    if len(sys.argv) < 3:
+        print("usage: make_html.py input.md output.html", file=sys.stderr)
+        sys.exit(2)
+
+    md, out = Path(sys.argv[1]), Path(sys.argv[2])
+    run([
         "pandoc", str(md),
-        "--toc", "--toc-depth=2",
-        "--number-sections", "--number-offset=1",
-        "--reference-links",
-        "--citeproc", "-M", "link-citations=true",
-        "-F", "pandoc-crossref",
+        "--from", "gfm+yaml_metadata_block",
         "--standalone",
-        "-o", str(out),
-    ]
-    bib = md.parent / "generated.bib"
-    if bib.exists(): cmd.extend(["--bibliography", str(bib)])
-    run(cmd)
+        "--toc", "--toc-depth=2",
+        "-o", str(out)
+    ])
     print(f"HTML written: {out}")
 
 if __name__ == "__main__":

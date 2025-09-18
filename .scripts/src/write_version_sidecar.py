@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Write immutable per-version sidecar: <workdir>/versions/<doi_safe>.yml
-Also refresh mutable <workdir>/source.yml (latest pointer).
+Write immutable per-version sidecar: preferredframe/prints/<Work>/versions/<doi_safe>.yml
+Also refresh mutable preferredframe/prints/<Work>/source.yml (latest pointer).
 
-Sidecar fields:
-- version_doi, concept_doi, title, issued_date (UTC ISO-8601)
-- repo: { url, github_commit, github_md_raw }
-- files: { md, pnpmd, html, pdf }  (served from BASE_URL + repo-relative path)
-- one_sentence_summary, abstract, keywords
-- zenodo_record (human HTML record URL for this version)
+Sidecar points to:
+- preferredframe site for .md and .pnp.md
+- siran/assets (raw GitHub) for .html and .pdf
+- Zenodo record (version page)
 """
 from __future__ import annotations
 from pathlib import Path
@@ -16,13 +14,21 @@ import os, sys, yaml, subprocess, re
 from datetime import datetime, timezone
 
 def die(m): print(m, file=sys.stderr); sys.exit(1)
-def iso_utc_now() -> str: return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def iso_utc_now(): return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-# ---------- PNPMD parsing ----------
-HDR_ABS  = re.compile(r"(?mi)^##\s*Abstract\s*$")
-HDR_SUM  = re.compile(r"(?mi)^##\s*One-Sentence\s+Summary\s*$")
-HDR_KEYS = re.compile(r"(?mi)^##\s*Keywords\s*$")
-HDR_NEXT = re.compile(r"(?m)^##\s+")
+def parse_header_lines(txt: str):
+    nonempty = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+    if len(nonempty) >= 3 and all(ln.startswith("%") for ln in nonempty[:3]):
+        title   = nonempty[0][1:].strip()
+        authors = [a for a in re.split(r'\s*(?:,|;| and )\s*', nonempty[1][1:].strip()) if a]
+        date    = nonempty[2][1:].strip()
+        return title, authors, date
+    return "", [], ""
+
+HDR_ABS   = re.compile(r"(?mi)^##\s*Abstract\s*$")
+HDR_SUM   = re.compile(r"(?mi)^##\s*One-Sentence\s+Summary\s*$")
+HDR_KEYS  = re.compile(r"(?mi)^##\s*Keywords\s*$")
+HDR_NEXT  = re.compile(r"(?m)^##\s+")
 
 def _section_text(txt: str, hdr: re.Pattern) -> str:
     m = hdr.search(txt)
@@ -58,26 +64,6 @@ def parse_keywords(txt: str) -> list[str]:
             if ln: out.append(ln)
     return out
 
-def parse_header_lines(txt: str):
-    """
-    PNPMD header: first three non-empty lines start with '% ':
-      % Title
-      % Authors
-      % Date
-    Returns (title, authors_raw, date_raw) or ("", "", "") if not present.
-    """
-    lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-    if len(lines) >= 3 and all(ln.startswith("%") for ln in lines[:3]):
-        title = lines[0][1:].strip()
-        authors_raw = lines[1][1:].strip()
-        date_raw = lines[2][1:].strip()
-        return title, authors_raw, date_raw
-    return "", "", ""
-
-# ---------- URL helpers ----------
-def github_raw_url(repo: str, ref: str, rel_repo_path: Path) -> str:
-    return f"https://raw.githubusercontent.com/{repo}/{ref}/{rel_repo_path.as_posix()}"
-
 def main():
     if len(sys.argv) < 4:
         die("usage: write_version_sidecar.py <md_path> <version_doi> <concept_doi> [zenodo_record_url]")
@@ -87,61 +73,44 @@ def main():
     concept_doi    = sys.argv[3]
     zenodo_record  = sys.argv[4] if len(sys.argv) > 4 else ""
 
-    # Repo + commit
-    repo = os.getenv("GITHUB_REPOSITORY", "")  # e.g., "siran/preferredframe"
-    if not repo:
-        die("GITHUB_REPOSITORY env not set")
-    repo_url = f"https://github.com/{repo}"
-    ref = subprocess.check_output(["git","rev-parse","HEAD"]).decode().strip()
-    github_commit_url = f"{repo_url}/commit/{ref}"
+    repo = os.getenv("GITHUB_REPOSITORY", "")  # "siran/preferredframe"
+    repo_url = f"https://github.com/{repo}" if repo else ""
+    commit = subprocess.check_output(["git","rev-parse","HEAD"]).decode().strip()
 
-    # Path relative to repo root for URLs
+    base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    assets_repo   = os.getenv("ASSETS_REPO", "siran/assets")
+    assets_branch = os.getenv("ASSETS_BRANCH", "main")
+
+    # repo-relative path (for preferredframe site URLs)
     try:
         rel_repo_path = md_path.relative_to(Path.cwd())
     except ValueError:
         rel_repo_path = md_path
+    rel_no_ext = rel_repo_path.with_suffix("")  # strip .md
 
-    # Public site base
-    base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    # Preferred Frame site URLs (.md, .pnp.md)
+    md_url    = f"{base_url}/{rel_no_ext.as_posix()}.md"
+    pnp_url   = f"{base_url}/{rel_no_ext.as_posix()}.pnp.md"
 
-    # Site file URLs — mirror repo layout under BASE_URL
-    rel_str = rel_repo_path.as_posix()
-    md_url    = f"{base_url}/{rel_str}"
-    if rel_str.endswith(".md"):
-        pnpmd_url = f"{base_url}/{rel_str[:-3]}pnpmd.md"
-        html_url  = f"{base_url}/{rel_str[:-3]}html"
-        pdf_url   = f"{base_url}/{rel_str[:-3]}pdf"
-    else:
-        pnpmd_url = f"{base_url}/{rel_str}.pnpmd.md"
-        html_url  = f"{base_url}/{rel_str}.html"
-        pdf_url   = f"{base_url}/{rel_str}.pdf"
+    # Assets URLs (.html, .pdf) served from siran/assets raw
+    # Path pattern: preferredframe/<Title>/<DOI_SAFE>/<Title>.{html,pdf}
+    title_from_header, authors, header_date = "", [], ""
+    txt = md_path.read_text(encoding="utf-8")
+    title_from_header, authors, header_date = parse_header_lines(txt)
+    title = title_from_header or md_path.stem
+    doi_safe = version_doi.replace("/", "_")
+    assets_base = f"https://raw.githubusercontent.com/{assets_repo}/{assets_branch}/preferredframe/{title}/{doi_safe}"
+    html_url = f"{assets_base}/{title}.html"
+    pdf_url  = f"{assets_base}/{title}.pdf"
 
-    # GitHub raw bytes for the MD at this exact commit
-    github_md_raw = github_raw_url(repo, ref, rel_repo_path)
-
-    # Extract PNPMD meta from the MD file
-    try:
-        txt = md_path.read_text(encoding="utf-8")
-    except Exception as e:
-        die(f"cannot read {md_path}: {e}")
-
-    hdr_title, hdr_authors_raw, _hdr_date = parse_header_lines(txt)
-    title = hdr_title or md_path.stem
-    # authors as list (split on ',', ';', or ' and ')
-    if hdr_authors_raw:
-        authors = [a for a in re.split(r'\s*(?:,|;| and )\s*', hdr_authors_raw) if a]
-    else:
-        authors = []
-
+    # Derived sections
     one_sentence_summary = parse_one_sentence_summary(txt)
     abstract = parse_abstract(txt)
     keywords = parse_keywords(txt)
 
     issued_date = os.getenv("ISSUED_DATE") or iso_utc_now()
-    title = md_path.stem
 
-    # Immutable per-version sidecar
-    doi_safe = version_doi.replace("/", "_")
+    # Write immutable per-version sidecar
     versions_dir = md_path.parent / "versions"
     versions_dir.mkdir(parents=True, exist_ok=True)
 
@@ -149,38 +118,43 @@ def main():
         "version_doi": version_doi,
         "concept_doi": concept_doi,
         "title": title,
-         "filename": md_path.name,
+        "filename": md_path.name,
+        "authors": authors,
+        "header_date": header_date,
         "issued_date": issued_date,
         "repo": {
             "url": repo_url,
-            "github_commit": github_commit_url,
-            "github_md_raw": github_md_raw,
+            "github_commit": f"{repo_url}/commit/{commit}" if repo_url else "",
+            "github_md_raw": f"https://raw.githubusercontent.com/{repo}/{commit}/{rel_repo_path.as_posix()}" if repo else "",
         },
         "files": {
             "md": md_url,
-            "pnpmd": pnpmd_url,
+            "pnp_md": pnp_url,
             "html": html_url,
             "pdf": pdf_url,
         },
-        "authors": authors,
-        "one_sentence_summary": one_sentence_summary,
-        "abstract": abstract,
-        "keywords": keywords,
-        "zenodo_record": zenodo_record,
+        "one_sentence_summary": one_sentence_summary or None,
+        "abstract": abstract or None,
+        "keywords": keywords or None,
+        "zenodo_record": zenodo_record or None,
     }
+    # drop None/empty
+    side = {k:v for k,v in side.items() if v not in ("", None)}
+    if "repo" in side:
+        side["repo"] = {k:v for k,v in side["repo"].items() if v not in ("", None)}
 
     out_yml = versions_dir / f"{doi_safe}.yml"
     out_yml.write_text(yaml.safe_dump(side, sort_keys=False), encoding="utf-8")
 
-    # Mutable latest pointer (minimal)
+    # Mutable latest pointer
     latest = {
         "concept_doi": concept_doi,
         "latest_version_doi": version_doi,
-        "repo": repo_url,
+        "repo": repo_url or repo,
         "path": str(rel_repo_path),
-        "imported_at": iso_utc_now(),
+        "imported_at": issued_date,
         "title": title,
-        "github_commit": github_commit_url,
+        "github_commit": f"{repo_url}/commit/{commit}" if repo_url else commit,
     }
     (md_path.parent / "source.yml").write_text(yaml.safe_dump(latest, sort_keys=False), encoding="utf-8")
 

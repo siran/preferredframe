@@ -14,9 +14,8 @@ jobs:
     permissions:
       contents: read
     env:
-      ZENODO_API: https://sandbox.zenodo.org/api
+      ZENODO_API: https://sandbox.zenodo.org/api   # switch to production when ready
       BASE_URL:   https://preferredframe.com
-      TAG_NAME:   ${{ github.ref_name }}
       GITHUB_REPOSITORY: ${{ github.repository }}
 
     steps:
@@ -58,23 +57,24 @@ jobs:
           echo "Changed MD files:"; printf "%s\n" "$FILES"
           [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must change per push (got $COUNT)."; exit 1; }
           MD="$FILES"
-          echo "md=$MD"            >> $GITHUB_OUTPUT
-          echo "pdf=${MD%.md}.pdf" >> $GITHUB_OUTPUT
-          echo "md_html=${MD%.md}.md.html" >> $GITHUB_OUTPUT
-          echo "html=${MD%.md}.html"       >> $GITHUB_OUTPUT
+          echo "md=$MD"                   >> $GITHUB_OUTPUT
+          echo "pdf=${MD%.md}.pdf"        >> $GITHUB_OUTPUT
+          echo "pnp_md=${MD%.md}.pnp.md"  >> $GITHUB_OUTPUT
+          echo "html=${MD%.md}.html"      >> $GITHUB_OUTPUT
 
       - name: Validate PNPMD
         run: python .scripts/src/validate_pnpmd.py "${{ steps.pick.outputs.md }}"
 
-      - name: Build PDF (aux)
+      - name: Build PDF (auxiliary)
         run: python .scripts/src/make_pdf.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pdf }}"
 
-      - name: Build HTMLs (aux)
-        run: |
-          python .scripts/src/make_html.py "${{ steps.pick.outputs.md }}"       "${{ steps.pick.outputs.md_html }}"
-          python .scripts/src/make_html.py "${{ steps.pick.outputs.md }}"       "${{ steps.pick.outputs.html }}"
+      - name: Build PNPMD normalized file (.pnp.md)
+        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
 
-      - name: Publish to Zenodo (PRIMARY = MD; attach PDF/HTML)
+      - name: Build HTML (auxiliary, from .pnp.md)
+        run: python .scripts/src/make_html.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.html }}"
+
+      - name: Publish to Zenodo (PRIMARY = MD; attach PNP/HTML/PDF)
         id: zenodo
         env:
           ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
@@ -82,9 +82,9 @@ jobs:
         run: |
           OUT=$(python .scripts/src/zenodo_publish.py \
             --primary "${{ steps.pick.outputs.md }}" \
-            --attach  "${{ steps.pick.outputs.pdf }}" \
-            --attach  "${{ steps.pick.outputs.md_html }}" \
+            --attach  "${{ steps.pick.outputs.pnp_md }}" \
             --attach  "${{ steps.pick.outputs.html }}" \
+            --attach  "${{ steps.pick.outputs.pdf }}" \
             --title "$(python - <<'PY'
 from pathlib import Path
 p=Path(r"""${{ steps.pick.outputs.md }}""")
@@ -108,7 +108,7 @@ PY
             "${{ steps.zenodo.outputs.concept_doi }}" \
             "${{ steps.zenodo.outputs.record_url }}"
 
-      - name: Push provenance to siran/assets
+      - name: Push artifacts+provenance to siran/assets
         env: { ASSETS_PAT: ${{ secrets.ASSETS_PAT }} }
         run: |
           set -e
@@ -130,12 +130,11 @@ PY
           git clone "https://${ASSETS_PAT}@github.com/siran/assets.git" assets
           DEST_DIR="preferredframe/$TITLE/$DOI_SAFE"
           mkdir -p "assets/$DEST_DIR"
-          cp "${{ steps.pick.outputs.md }}"        "assets/$DEST_DIR/${TITLE}.md"
+
+          cp "${{ steps.pick.outputs.pdf }}"       "assets/$DEST_DIR/${TITLE}.pdf"
+          cp "${{ steps.pick.outputs.html }}"      "assets/$DEST_DIR/${TITLE}.html"
           cp "${SRC_DIR}/source.yml"               "assets/$DEST_DIR/source.yml"
           cp "${SRC_DIR}/versions/${DOI_SAFE}.yml" "assets/$DEST_DIR/${DOI_SAFE}.yml"
-          cp "${{ steps.pick.outputs.pdf }}"       "assets/$DEST_DIR/${TITLE}.pdf"
-          cp "${{ steps.pick.outputs.md_html }}"   "assets/$DEST_DIR/${TITLE}.md.html"
-          cp "${{ steps.pick.outputs.html }}"      "assets/$DEST_DIR/${TITLE}.html"
 
           cd assets
           git add "$DEST_DIR"
