@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Submit PNPMD to Preferred Frame</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; line-height: 1.35 }
+  code, pre, input, button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+  .muted { color: #666 }
+  .ok { color: #0a0 }
+  .err { color: #a00 }
+  #deviceStep { display:none; padding: .75rem; border: 1px solid #ddd; border-radius: 8px; background: #fafafa }
+  #fileInput { margin-top: 1rem }
+  #fileInput[disabled] { opacity: .5 }
+</style>
+
+<h1>Submit your paper & get a DOI</h1>
+<p class="muted">You must sign in with GitHub to submit. Validation & DOI minting run automatically after your pull request is opened.</p>
+
+<div id="authStep">
+  <button id="loginBtn">Login with GitHub</button>
+</div>
+
+<div id="deviceStep">
+  <p><b>Step 2:</b> Open <a id="verifyLink" href="https://github.com/login/device" target="_blank" rel="noopener">github.com/login/device</a> and enter this code:</p>
+  <p style="font-size: 1.6rem; letter-spacing: .08em"><code id="userCode">········</code></p>
+  <p class="muted" id="pollNote">Waiting for authorization…</p>
+</div>
+
+<div id="submitStep" style="display:none">
+  <p class="ok">✅ Signed in with GitHub. Choose your <code>.md</code> file:</p>
+  <input type="file" id="fileInput" accept=".md" disabled>
+  <p class="muted">It will be added under <code>preferredframe/prints/&lt;Title&gt;/&lt;filename&gt;.md</code> in your fork, and a PR to <code>siran/preferredframe</code> will be opened.</p>
+</div>
+
+<pre id="log" class="muted"></pre>
+
+<script>
+/* ====== CONFIG ====== */
+const OWNER      = "siran";
+const REPO       = "preferredframe";       // upstream
+const BASE_BRANCH= "main";
+const SCOPES     = "public_repo";          // use "repo" if private
+const CLIENT_ID  = "YOUR_GITHUB_OAUTH_APP_CLIENT_ID"; // Device Flow needs only client_id
+
+/* ====== UI ====== */
+const el = (id) => document.getElementById(id);
+function log(msg, cls="") {
+  const pfx = cls === "err" ? "✖ " : cls === "ok" ? "✔ " : "• ";
+  el("log").textContent += pfx + msg + "\n";
+}
+
+/* ====== Device OAuth (no secret needed) ======
+   1) POST https://github.com/login/device/code {client_id, scope}
+   2) Show user_code; user verifies at github.com/login/device
+   3) Poll POST https://github.com/login/oauth/access_token {client_id, device_code, grant_type}
+*/
+async function startDeviceFlow() {
+  const r = await fetch("https://github.com/login/device/code", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ client_id: CLIENT_ID, scope: SCOPES })
+  });
+  if (!r.ok) throw new Error("device/code failed");
+  const data = await r.json(); // device_code, user_code, verification_uri, interval
+  return data;
+}
+
+async function pollForToken(device_code, intervalSec) {
+  while (true) {
+    await new Promise(r => setTimeout(r, intervalSec * 1000));
+    const r = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        device_code,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+      })
+    });
+    if (!r.ok) throw new Error("token poll failed");
+    const data = await r.json();
+    if (data.error) {
+      if (data.error === "authorization_pending") continue;
+      if (data.error === "slow_down") { intervalSec += 2; continue; }
+      throw new Error("oauth error: " + data.error);
+    }
+    return data.access_token;
+  }
+}
+
+/* ====== GitHub REST helpers ====== */
+async function gh(path, opts={}, token) {
+  const r = await fetch("https://api.github.com" + path, {
+    ...opts,
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "Authorization": "Bearer " + token,
+      ...(opts.headers||{})
+    }
+  });
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`GitHub API ${path} failed: ${r.status} ${txt}`);
+  }
+  return r.json();
+}
+
+async function ensureFork(token) {
+  // See if user already has a fork
+  const me = await gh("/user", {}, token);
+  const userRepo = `${me.login}/${REPO}`;
+  try {
+    await gh(`/repos/${userRepo}`, {}, token);
+    log(`Found fork: ${userRepo}`);
+    return { user: me.login, repo: userRepo };
+  } catch { /* not found → create fork */ }
+  log("Creating fork…");
+  await gh(`/repos/${OWNER}/${REPO}/forks`, { method: "POST" }, token);
+  // Wait until fork is ready
+  for (let i=0;i<20;i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      await gh(`/repos/${userRepo}`, {}, token);
+      log(`Fork ready: ${userRepo}`);
+      return { user: me.login, repo: userRepo };
+    } catch {}
+  }
+  throw new Error("Fork not ready after waiting.");
+}
+
+async function getBranchSha(ownerRepo, branch, token) {
+  const ref = await gh(`/repos/${ownerRepo}/git/ref/heads/${branch}`, {}, token);
+  return ref.object.sha;
+}
+
+async function createBranch(ownerRepo, fromSha, newBranch, token) {
+  await gh(`/repos/${ownerRepo}/git/refs`, {
+    method: "POST",
+    body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: fromSha })
+  }, token);
+}
+
+async function putFile(ownerRepo, path, message, contentBase64, branch, token) {
+  return gh(`/repos/${ownerRepo}/contents/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    body: JSON.stringify({ message, content: contentBase64, branch })
+  }, token);
+}
+
+async function openPR(headUser, branch, title, token) {
+  const pr = await gh(`/repos/${OWNER}/${REPO}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      head: `${headUser}:${branch}`,
+      base: BASE_BRANCH
+    })
+  }, token);
+  return pr.html_url;
+}
+
+/* ====== Orchestration ====== */
+let GITHUB_TOKEN = null;
+
+async function login() {
+  try {
+    const dev = await startDeviceFlow();
+    // Show instructions
+    el("authStep").style.display   = "none";
+    el("deviceStep").style.display = "block";
+    el("userCode").textContent     = dev.user_code;
+    el("verifyLink").href          = dev.verification_uri;
+
+    log("Open the verification page and enter the code above.");
+    const token = await pollForToken(dev.device_code, dev.interval || 5);
+    GITHUB_TOKEN = token;
+    el("deviceStep").style.display  = "none";
+    el("submitStep").style.display  = "block";
+    el("fileInput").disabled        = false;
+    log("Signed in. You can now submit a file.", "ok");
+  } catch (e) {
+    log(e.message || String(e), "err");
+  }
+}
+
+async function submitFile(file) {
+  try {
+    if (!GITHUB_TOKEN) throw new Error("Not authenticated.");
+    const txt = await file.text();
+    const b64 = btoa(unescape(encodeURIComponent(txt)));
+
+    // Derive folder name from % Title (first non-empty line) if present
+    const firstNonEmpty = (txt.split(/\r?\n/).find(l => l.trim().length) || "").trim();
+    const title = firstNonEmpty.startsWith("% ") ? firstNonEmpty.slice(2).trim() : file.name.replace(/\.md$/i,"");
+    const work  = title.replace(/[\/]/g, "_"); // simple sanitization
+    const relPath = `preferredframe/prints/${work}/${file.name}`;
+
+    // Ensure fork → create branch from upstream main → put file → open PR
+    const { user, repo } = await ensureFork(GITHUB_TOKEN);
+    const upstreamSha = await getBranchSha(`${OWNER}/${REPO}`, BASE_BRANCH, GITHUB_TOKEN);
+    const newBranch = `submit-${Date.now()}`;
+    await createBranch(`${user}/${REPO}`, upstreamSha, newBranch, GITHUB_TOKEN);
+    await putFile(`${user}/${REPO}`, relPath, `Add ${file.name}`, b64, newBranch, GITHUB_TOKEN);
+    const prUrl = await openPR(user, newBranch, `Submission: ${file.name}`, GITHUB_TOKEN);
+
+    log("Pull Request created:", "ok");
+    log(prUrl);
+    alert("PR created:\n" + prUrl);
+  } catch (e) {
+    log(e.message || String(e), "err");
+  }
+}
+
+/* ====== Wire up ====== */
+el("loginBtn").addEventListener("click", login);
+el("fileInput").addEventListener("change", (e) => { if (e.target.files[0]) submitFile(e.target.files[0]); });
+</script>
+</html>

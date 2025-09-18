@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, subprocess, urllib.parse
+import os, subprocess, urllib.parse, shutil
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -67,7 +67,7 @@ OWNER, REPO, BRANCH = detect_repo_branch()
 # ---------- paths ----------
 ROOT = Path(__file__).resolve().parents[1]
 OUT  = ROOT / "site"
-SRC  = ROOT / ".scripts" / "src"  # header.html / footer.html / coda.html
+SRC  = ROOT / ".scripts" / "src"   # header.html / footer.html / coda.html / submit.html
 
 # ---------- base url & CNAME ----------
 def compute_base_url() -> str:
@@ -90,8 +90,8 @@ def write_cname_if_custom(base_url: str):
 # ---------- helpers ----------
 def rel(p: Path) -> Path: return p.relative_to(ROOT)
 
-# keep spaces visible (no encoding)
 def raw_url(relpath: Path) -> str:
+    # keep spaces visible (no encoding)
     return f"https://raw.githubusercontent.com/{OWNER}/{REPO}/{BRANCH}/{relpath.as_posix()}"
 
 def blob_url(relpath: Path) -> str:
@@ -177,6 +177,17 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     lines.append("")
     return "\n".join(lines)
 
+def copy_static():
+    """Copy static pages from .scripts/src/ into site/."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    static_names = ["submit.html"]
+    for name in static_names:
+        src = SRC / name
+        if src.exists():
+            dst = OUT / name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
 # ---------- build ----------
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
@@ -211,6 +222,8 @@ def main():
         md_body = format_dir_index(d, items)
         out_html = (OUT / rel(d) / "index.html") if d != ROOT else (OUT / "index.html")
         write_md_like_page(out_html, md_body)
+
+    copy_static()
 
 if __name__ == "__main__":
     main()
