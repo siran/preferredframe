@@ -14,24 +14,21 @@ jobs:
     permissions:
       contents: read
     env:
-      ZENODO_API: https://sandbox.zenodo.org/api   # switch to production when ready
+      ZENODO_API: https://sandbox.zenodo.org/api
       BASE_URL: https://preferredframe.com
 
     steps:
+      - name: Ensure git in container (before checkout)
+        shell: bash
+        run: |
+          set -e
+          command -v git || { apt-get update -y && apt-get install -y git; }
+          git --version
+
       - name: Checkout (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Ensure git in container
-        shell: bash
-        run: |
-          set -e
-          if ! command -v git >/dev/null 2>&1; then
-            apt-get update -y
-            apt-get install -y git
-          fi
-          git --version
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -53,16 +50,13 @@ jobs:
           install -m 0755 pandoc-crossref /usr/local/bin/pandoc-crossref
           pandoc-crossref --version
 
-      - name: Run print pipeline
+      - name: Run print pipeline (push → build → Zenodo)
         env:
-          # GitHub-provided refs for push
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_BEFORE:     ${{ github.event.before }}
           GITHUB_AFTER:      ${{ github.sha }}
-          # Secrets
           ASSETS_PAT:        ${{ secrets.ASSETS_PAT }}
           ZENODO_TOKEN:      ${{ secrets.ZENODO_TOKEN }}
-          # Config
           ZENODO_API:        ${{ env.ZENODO_API }}
           BASE_URL:          ${{ env.BASE_URL }}
         run: |
