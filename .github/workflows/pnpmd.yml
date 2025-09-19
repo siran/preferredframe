@@ -1,5 +1,5 @@
-# .github/workflows/pnpmd.yml
 name: PNPMD PR Check
+
 on:
   pull_request:
     branches: [ "main" ]
@@ -7,15 +7,15 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    # if you use a container, keep it; we install git inside it
-    # container: ghcr.io/your/image:tag
+    # If you use a container, add it here; we install git inside it as well.
     steps:
-      - name: Install git in runner/container
+      - name: Install git (works on Ubuntu/Alpine/RHEL runners/containers)
         shell: bash
         run: |
           set -e
           if command -v git >/dev/null 2>&1; then
-            git --version; exit 0
+            git --version
+            exit 0
           fi
           if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get update -y || true
@@ -38,24 +38,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Robust base/head for PRs (forks included)
+
+          # Robust base/head shas for PRs (forks included)
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-
           echo "Diff: $BASE_SHA...$HEAD_SHA"
-          CHANGED="$(git diff --name-only "$BASE_SHA...$HEAD_SHA" || true)"
+
+          # Disable C-quoting and get NUL-separated list to preserve UTF-8
+          CHANGED=$(git -c core.quotepath=false diff --name-only -z "$BASE_SHA...$HEAD_SHA" || true)
+
           echo "Changed files:"
-          echo "$CHANGED"
+          printf '%s' "$CHANGED" | tr '\0' '\n' | sed '/^$/d'
           echo
 
-          PNPMD_CHANGED="$(echo "$CHANGED" | grep -E '^preferredframe/prints/.+\.md$' || true)"
-          PNPMD_COUNT="$(echo "$PNPMD_CHANGED" | sed '/^\s*$/d' | wc -l | tr -d ' ')"
+          # Count only *.md under preferredframe/prints/**
+          MD_CHANGED=$(printf '%s' "$CHANGED" | tr '\0' '\n' | grep -E '^preferredframe/prints/.+\.md$' || true)
+          MD_COUNT=$(printf '%s\n' "$MD_CHANGED" | sed '/^\s*$/d' | wc -l | tr -d ' ')
 
           echo "Changed PNPMD .md files:"
-          echo "$PNPMD_CHANGED"
-          echo "Count: $PNPMD_COUNT"
+          printf '%s\n' "$MD_CHANGED" | sed '/^\s*$/d' || true
+          echo "Count: $MD_COUNT"
 
-          if [ "$PNPMD_COUNT" -ne 1 ]; then
-            echo "Exactly one .md must be changed in the PR (got $PNPMD_COUNT)."
+          if [ "$MD_COUNT" -ne 1 ]; then
+            echo "Exactly one .md must be changed in the PR (got $MD_COUNT)."
             exit 1
           fi
+
+          # .yml sidecar changes are fine; nothing else is enforced here.

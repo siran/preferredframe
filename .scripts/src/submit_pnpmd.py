@@ -14,9 +14,10 @@ Behavior:
 - Pushes the branch; default prints compare URL. With --use-gh, tries GitHub CLI.
 - Idempotent: safe re-runs. Cleans the temporary worktree at the end.
 
-Constraints:
-- No absolute local paths are stored.
-- Title/destination filename are NOT modified (checked for path separators / forbidden chars).
+Strictness:
+- Title/destination filename are NOT modified.
+- Rejects: path separators, NUL, OS-problem chars, and ANY non-ASCII in Title.
+  (If rejected, the script exits with a clear error—fix the file’s `% Title`.)
 """
 
 import argparse, subprocess, sys, shutil, re
@@ -72,10 +73,13 @@ def extract_header_fields(md_file: Path):
     return title, authors
 
 def assert_safe_component(label: str, s: str):
-    # forbid path seps/NUL and OS-problematic chars (incl. ':')
+    # forbid path seps/NUL and OS-problem chars
     forbidden = set('/\\\x00:*?"<>|')
     if any(ch in forbidden for ch in s):
         sys.exit(f"ERROR: {label} contains forbidden characters. Value: {s!r}")
+    # ASCII-only policy for Title (reject any Unicode)
+    if any(ord(ch) > 127 for ch in s):
+        sys.exit(f"ERROR: {label} must be ASCII-only (replace Unicode like ‘–’ with '-'). Value: {s!r}")
 
 def write_sidecar(dest_md: Path, *, title: str, authors: str, original_filename: str, origin: dict):
     side = {
@@ -117,7 +121,7 @@ def ensure_worktree(branch: str) -> Path:
     WT_BASE.mkdir(parents=True, exist_ok=True)
     wt = WT_BASE / branch
     wt_posix = wt.as_posix()
-    # reuse existing registered worktree: hard-reset to upstream/main for clean base
+    # Reuse existing worktree: reset to upstream/main for clean base
     for ent in list_worktrees():
         if ent.get("worktree") == wt_posix:
             run(["git","fetch","upstream","main"], cwd=ROOT)
