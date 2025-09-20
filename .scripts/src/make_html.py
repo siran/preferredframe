@@ -19,6 +19,7 @@ def main():
         "--from", "gfm+yaml_metadata_block",
         "--standalone",
         "--toc", "--toc-depth=2",
+        "-F", "pandoc-crossref",
         "-o", str(out)
     ])
     print(f"HTML written: {out}")

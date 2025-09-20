@@ -48,13 +48,11 @@ def main():
     ap.add_argument("--concept", help="Concept DOI to version (optional). If omitted, creates a new concept.")
     args = ap.parse_args()
 
-    # Required env
     ZENODO_TOKEN = require_env("ZENODO_TOKEN")
     ASSETS_PAT   = require_env("ASSETS_PAT")
 
-    # Optional env
     ZENODO_API = os.getenv("ZENODO_API", "https://zenodo.org/api")
-    os.environ["ZENODO_API"] = ZENODO_API  # used by zenodo_publish.py
+    os.environ["ZENODO_API"] = ZENODO_API
     sys.stderr.write(f"[zenodo] API: {ZENODO_API}\n")
 
     md = Path(args.md).resolve()
@@ -63,23 +61,20 @@ def main():
     pdf = md.with_suffix(".pdf")
     title = args.title or read_title_from_md(md)
 
-    # 1) Validate PNPMD
     sys.stderr.write(f"[validate] {md}\n")
     run([sys.executable, str(SRC / "validate_pnpmd.py"), str(md)])
 
-    # 2) Build PDF
     sys.stderr.write(f"[pandoc] -> {pdf}\n")
     run([sys.executable, str(SRC / "make_pdf.py"), str(md), str(pdf)])
 
-    # 3) Publish to Zenodo
     cmd = [
         sys.executable, str(SRC / "zenodo_publish.py"),
-        "--md", str(md),
-        "--pdf", str(pdf),
-        "--title", title,
+        "--primary", str(md),
+        "--attach",  str(pdf),
+        "--title",   title,
     ]
     if args.concept:
-        cmd += ["--concept", args.concept]
+        cmd += ["--concept", args.concept]  # safe to include; ignored if zenodo_publish.py doesn't support
     sys.stderr.write("[zenodo] publishing…\n")
     pub = run(cmd, capture=True)
     try:
@@ -95,7 +90,6 @@ def main():
     if not (concept_doi and version_doi):
         die(f"Zenodo publish did not return DOIs: {pub.stdout}")
 
-    # 4) Write sidecars (immutable per-version + refresh source.yml)
     sys.stderr.write("[sidecar] writing version + latest…\n")
     env = os.environ.copy()
     if issued:
@@ -105,7 +99,6 @@ def main():
         str(md), version_doi, concept_doi, record_url
     ], capture=False)
 
-    # 5) Push PDF + sidecar to siran/assets
     sys.stderr.write("[assets] pushing PDF + source.yml to siran/assets…\n")
     doi_safe = version_doi.replace("/", "_")
     work_dir = md.parent
@@ -121,7 +114,7 @@ def main():
         dest = assets_repo / "preferredframe" / title / doi_safe
         dest.mkdir(parents=True, exist_ok=True)
 
-        shutil.copy2(pdf, dest / f"{title}.pdf")
+        shutil.copy2(pdf,       dest / f"{title}.pdf")
         shutil.copy2(source_yml, dest / "source.yml")
 
         run(["git", "config", "user.name", "preferredframe-bot"], cwd=assets_repo)
@@ -131,7 +124,6 @@ def main():
         run(["git", "commit", "-m", msg], cwd=assets_repo)
         run(["git", "push"], cwd=assets_repo)
 
-    # Final JSON summary
     print(json.dumps({
         "ok": True,
         "md": str(md),
