@@ -14,13 +14,49 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: pandoc/latex:latest
+    defaults:
+      run:
+        shell: sh
 
     steps:
+      - name: Ensure git, curl, python, pip (inside container)
+        run: |
+          set -eu
+          have() { command -v "$1" >/dev/null 2>&1; }
+          install_pkgs() {
+            if have apt-get; then
+              apt-get update -y
+              apt-get install -y git curl python3 python3-venv python3-pip
+            elif have apk; then
+              apk add --no-cache git curl python3 py3-pip py3-virtualenv
+            elif have microdnf; then
+              microdnf install -y git curl python3 python3-pip || microdnf install -y git curl python3
+            elif have dnf; then
+              dnf install -y git curl python3 python3-pip || dnf install -y git curl python3
+            elif have yum; then
+              yum install -y git curl python3 python3-pip || yum install -y git curl python3
+            elif have zypper; then
+              zypper --non-interactive install git curl python3 python3-pip || zypper --non-interactive install git curl python3
+            else
+              echo "No supported package manager found." >&2
+              exit 1
+            fi
+          }
+          have git && have python3 || install_pkgs
+          if ! have pip3; then
+            curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3
+          fi
+          git --version
+          python3 --version
+          pip3 --version
+
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
 
       - name: Locate exactly one changed Markdown file
         id: pick
@@ -28,15 +64,15 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -e
+          set -eu
           FILES=$(git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- 'preferredframe/prints/**/*.md' ':!**/README.md' || true)
           COUNT=$(printf "%s\n" "$FILES" | sed '/^\s*$/d' | wc -l)
           echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
           [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the PR (got $COUNT)."; exit 1; }
           MD="$FILES"
-          echo "md=$MD"                  >> $GITHUB_OUTPUT
-          echo "pnp_md=${MD%.md}.pnp.md" >> $GITHUB_OUTPUT
-          echo "html=${MD%.md}.html"     >> $GITHUB_OUTPUT
+          echo "md=$MD"                  >> "$GITHUB_OUTPUT"
+          echo "pnp_md=${MD%.md}.pnp.md" >> "$GITHUB_OUTPUT"
+          echo "html=${MD%.md}.html"     >> "$GITHUB_OUTPUT"
 
       - name: Validate PNPMD
         run: python .scripts/src/validate_pnpmd.py "${{ steps.pick.outputs.md }}"
@@ -67,21 +103,19 @@ jobs:
             ${{ steps.pick.outputs.html }}
             doi_candidates.json
 
-      # Install GitHub CLI inside the container (gh is not preinstalled there)
       - name: Install GitHub CLI
         run: |
-          set -e
-          type -p curl >/dev/null || (apt-get update && apt-get install -y curl)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-            > /etc/apt/sources.list.d/github-cli.list
-          apt-get update && apt-get install -y gh
+          set -eu
+          command -v gh >/dev/null 2>&1 && exit 0
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update && apt-get install -y gh || true
+          fi
 
-      # Enable PR auto-merge (squash) once all required checks pass
       - name: Enable PR auto-merge (squash) with gh
+        if: ${{ env.GITHUB_TOKEN != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr merge --squash --auto "$PR_NUMBER"
+        run: |
+          set -eu
+          command -v gh >/dev/null 2>&1 && gh pr merge --squash --auto "$PR_NUMBER" || true
