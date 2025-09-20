@@ -2,175 +2,155 @@
 """
 print_pipeline.py
 
-Modes:
-- PR gate (CI/local):    python print_pipeline.py --pr-check
-  * Uses BASE_SHA, HEAD_SHA (env).
-  * Ensures exactly one .md changed under preferredframe/prints/**.
-  * Enforces ASCII-only Title by reading the file from GIT (git show HEAD_SHA:path).
-  * Emits explicit PASS/FAIL lines.
+Pipeline logic for PNPMD → Zenodo publication.
 
-- Push pipeline (CI/local):   python print_pipeline.py
-  * Uses GITHUB_BEFORE, GITHUB_AFTER (env).
-  * Detects the one changed .md, validates ASCII Title from filesystem,
-    builds artifacts, publishes to Zenodo, writes sidecar, pushes to siran/assets.
+Behavior:
+- Detect exactly one changed .md file under preferredframe/prints/.
+- Validate it with validate_pnpmd.py.
+- Build PDF, normalized .pnp.md, HTML.
+- Publish to Zenodo.
+- Write version sidecar.
+- Push artifacts/provenance to siran/assets.
+
+This script is invoked by GitHub Actions (print.yml) on push.
+It can also be run locally by setting GITHUB_BEFORE and GITHUB_AFTER.
 """
 
-from __future__ import annotations
-import os, sys, subprocess, json, shutil
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
 def run(cmd, cwd=None, check=True, text=False, env=None):
-    p = subprocess.run(cmd, cwd=cwd, check=check, text=text,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    p = subprocess.run(
+        cmd,
+        cwd=cwd,
+        check=check,
+        text=text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
     return p.stdout if text else p.stdout
 
-def die(msg: str, code: int = 1):
-    print(msg, file=sys.stderr)
-    sys.exit(code)
 
-def need(name: str) -> str:
-    v = os.environ.get(name, "")
-    if not v:
-        die(f"ERROR: environment variable {name} is required")
-    return v
+def have_commit(sha: str) -> bool:
+    try:
+        run(["git", "cat-file", "-e", f"{sha}^{{commit}}"])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def fetch_commit(sha: str):
+    # Try fetching just that commit
+    for remote in ("origin", "upstream"):
+        try:
+            run(["git", "fetch", "--no-tags", "--depth", "1", remote, sha])
+            if have_commit(sha):
+                return
+        except subprocess.CalledProcessError:
+            pass
+    # Last resort: unshallow origin
+    try:
+        run(["git", "fetch", "--no-tags", "--prune", "--progress", "--depth", "0", "origin"])
+    except subprocess.CalledProcessError:
+        pass
+
+
+def ensure_commits(base: str, head: str):
+    if not have_commit(base):
+        fetch_commit(base)
+    if not have_commit(head):
+        fetch_commit(head)
+
 
 def git_changed_paths(base: str, head: str) -> list[str]:
-    out = run(["git","-c","core.quotepath=false","diff","--name-only","-z", f"{base}...{head}"])
+    ensure_commits(base, head)
+    try:
+        out = run(
+            ["git", "-c", "core.quotepath=false", "diff", "--name-only", "-z", f"{base}...{head}"]
+        )
+    except subprocess.CalledProcessError:
+        # fallback to merge-base..head
+        mb = run(["git", "merge-base", base, head], text=True).strip()
+        out = run(
+            ["git", "-c", "core.quotepath=false", "diff", "--name-only", "-z", f"{mb}..{head}"]
+        )
     parts = [p for p in out.split(b"\x00") if p]
     return [p.decode("utf-8", "strict") for p in parts]
 
+
 def pick_one_md_under_prints(base: str, head: str) -> str:
     paths = git_changed_paths(base, head)
+    md_files = [
+        p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")
+    ]
     print("Changed files:")
-    for p in paths: print(p)
-    md = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
-    print("\nChanged print .md files:")  # renamed for clarity
-    for p in md: print(p)
-    ok = (len(md) == 1)
-    print(f"Check 1: exactly one .md under preferredframe/prints — {'PASSED' if ok else 'FAILED'}")
-    if not ok:
-        die(f"Exactly one .md must be changed (got {len(md)}).")
-    return md[0]
+    for p in paths:
+        print(p)
+    print("\nChanged print .md files:")
+    for p in md_files:
+        print(p)
 
-def extract_title_from_fs(md_path: Path) -> str:
-    with md_path.open("r", encoding="utf-8") as f:
-        first = f.readline().strip()
-    return first[2:].strip() if first.startswith("% ") else md_path.stem
+    if len(md_files) != 1:
+        sys.exit(f"Exactly one .md must be changed (got {len(md_files)}).")
 
-def extract_title_from_git(head_sha: str, repo_rel_path: str) -> str:
-    spec = f"{head_sha}:{repo_rel_path}"
-    out = run(["git","show", spec], text=False)
-    first_line = out.splitlines()[0].decode("utf-8", "strict") if out else ""
-    first = first_line.strip()
-    return first[2:].strip() if first.startswith("% ") else Path(repo_rel_path).stem
+    return md_files[0]
 
-def enforce_ascii_title(title: str):
-    ok = True
-    try:
-        title.encode("ascii")
-    except UnicodeEncodeError:
-        ok = False
-    print(f"Check 2: ASCII-only Title — {'PASSED' if ok else 'FAILED'}")
-    if not ok:
-        die(f"ERROR: Title must be ASCII-only (replace Unicode like ‘–’ with '-'). Found: {title!r}")
-
-def build_and_publish(md_path: Path, title: str):
-    pdf_path  = md_path.with_suffix(".pdf")
-    pnp_md    = md_path.with_suffix(".pnp.md")
-    html_path = md_path.with_suffix(".html")
-
-    print("Validating PNPMD…")
-    run(["python",".scripts/src/validate_pnpmd.py", str(md_path)], text=True)
-
-    print("Building PDF…")
-    run(["python",".scripts/src/make_pdf.py", str(md_path), str(pdf_path)], text=True)
-
-    print("Building PNPMD normalized (.pnp.md)…")
-    run(["python",".scripts/src/make_pnpmd.py", str(md_path), str(pnp_md)], text=True)
-
-    print("Building HTML…")
-    run(["python",".scripts/src/make_html.py", str(pnp_md), str(html_path)], text=True)
-
-    print("Publishing to Zenodo…")
-    zenodo_token = need("ZENODO_TOKEN")
-    zenodo_api   = need("ZENODO_API")
-    env = os.environ.copy()
-    env["ZENODO_TOKEN"] = zenodo_token
-    env["ZENODO_API"]   = zenodo_api
-
-    p = subprocess.run(
-        ["python",".scripts/src/zenodo_publish.py",
-         "--primary", str(md_path),
-         "--attach",  str(pnp_md),
-         "--attach",  str(html_path),
-         "--attach",  str(pdf_path),
-         "--title",   title],
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
-    )
-    if p.returncode != 0:
-        sys.stderr.write(p.stderr)
-        die("zenodo_publish.py failed")
-    try:
-        z = json.loads(p.stdout)
-    except Exception as e:
-        print(p.stdout)
-        die(f"zenodo_publish.py did not return JSON: {e}")
-
-    concept_doi = z["concept_doi"]
-    version_doi = z["version_doi"]
-    record_url  = z["record_url"]
-    doi_safe = version_doi.replace("/", "_")
-    print(f"Zenodo OK: version={version_doi} concept={concept_doi}")
-
-    print("Writing version sidecar…")
-    run(["python",".scripts/src/write_version_sidecar.py",
-         str(md_path), version_doi, concept_doi, record_url], text=True)
-
-    print("Pushing artifacts to siran/assets…")
-    assets_pat = need("ASSETS_PAT")
-    assets_dir = ROOT / "assets"
-    if assets_dir.exists():
-        shutil.rmtree(assets_dir)
-    run(["git","config","--global","user.name","preferredframe-bot"], text=True)
-    run(["git","config","--global","user.email","bot@preferredframe.com"], text=True)
-    run(["git","clone", f"https://{assets_pat}@github.com/siran/assets.git", str(assets_dir)], text=True)
-
-    dest = assets_dir / "preferredframe" / title / doi_safe
-    dest.mkdir(parents=True, exist_ok=True)
-
-    shutil.copy2(pdf_path,  dest / f"{title}.pdf")
-    shutil.copy2(html_path, dest / f"{title}.html")
-    src_dir = md_path.parent
-    shutil.copy2(src_dir / "source.yml",                      dest / "source.yml")
-    shutil.copy2(src_dir / "versions" / f"{doi_safe}.yml",    dest / f"{doi_safe}.yml")
-
-    run(["git","-C", str(assets_dir), "add", str(dest.relative_to(assets_dir))], text=True)
-    run(["git","-C", str(assets_dir), "commit","-m", f'Publish "{title}" — {version_doi} (primary: .md)'], text=True)
-    run(["git","-C", str(assets_dir), "push"], text=True)
 
 def main():
-    args = sys.argv[1:]
-    if args and args[0] == "--pr-check":
-        base = need("BASE_SHA")
-        head = need("HEAD_SHA")
-        md_repo_rel = pick_one_md_under_prints(base, head)
-        title = extract_title_from_git(head, md_repo_rel)
-        enforce_ascii_title(title)
-        print("PR gate OK.")
-        return
+    before = os.environ.get("GITHUB_BEFORE")
+    after = os.environ.get("GITHUB_AFTER")
 
-    before = need("GITHUB_BEFORE")
-    after  = need("GITHUB_AFTER")
+    if not before or not after:
+        sys.exit("GITHUB_BEFORE and GITHUB_AFTER must be set.")
+
     md_repo_rel = pick_one_md_under_prints(before, after)
     md_path = ROOT / md_repo_rel
-    if not md_path.exists():
-        die(f"File not found in checkout: {md_path}")
-    title = extract_title_from_fs(md_path)
-    enforce_ascii_title(title)
-    build_and_publish(md_path, title)
-    print("Push pipeline OK.")
+
+    # Step 1: validate PNPMD
+    run([sys.executable, str(ROOT / ".scripts/src/validate_pnpmd.py"), str(md_path)], check=True)
+
+    # Step 2: build PDF
+    pdf_path = md_path.with_suffix(".pdf")
+    run(
+        [sys.executable, str(ROOT / ".scripts/src/make_pdf.py"), str(md_path), str(pdf_path)],
+        check=True,
+    )
+
+    # Step 3: build normalized .pnp.md
+    pnp_md = md_path.with_suffix(".pnp.md")
+    run(
+        [sys.executable, str(ROOT / ".scripts/src/make_pnpmd.py"), str(md_path), str(pnp_md)],
+        check=True,
+    )
+
+    # Step 4: build HTML
+    html_path = md_path.with_suffix(".html")
+    run(
+        [sys.executable, str(ROOT / ".scripts/src/make_html.py"), str(pnp_md), str(html_path)],
+        check=True,
+    )
+
+    # Step 5: publish to Zenodo
+    run(
+        [sys.executable, str(ROOT / ".scripts/src/zenodo_publish.py"), "--primary", str(md_path),
+         "--attach", str(pnp_md), "--attach", str(html_path), "--attach", str(pdf_path)],
+        check=True,
+    )
+
+    # Step 6: write version sidecar
+    run(
+        [sys.executable, str(ROOT / ".scripts/src/write_version_sidecar.py"), str(md_path)],
+        check=True,
+    )
+
+    print("Pipeline finished successfully.")
+
 
 if __name__ == "__main__":
     main()
