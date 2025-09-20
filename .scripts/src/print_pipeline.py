@@ -5,26 +5,36 @@ print_pipeline.py
 PR gate:   --pr-check  (diff BASE..HEAD; title from HEAD blob; ASCII-only)
 Push build: validate -> pnp.md -> html/pdf (from pnp.md) -> Zenodo -> sidecars -> assets
 
-Relies on explicit git rooting if provided:
-  GIT_DIR, GIT_WORK_TREE  (recommended in CI)
-Otherwise falls back to discovered ROOT (repo toplevel).
+Robust to CI environments where the working directory is not a git worktree.
+If no worktree is detected, it will shallow-clone the repository to a temp dir
+and fetch the two SHAs to compute the diff.
+
+Env expected (push mode):
+  GITHUB_REPOSITORY   e.g. "siran/preferredframe"
+  GITHUB_BEFORE       base sha
+  GITHUB_AFTER        head sha
+  (Optional) GITHUB_WORKSPACE  path
+  (Optional) GIT_DIR, GIT_WORK_TREE  explicit git root
+  (Optional) ASSETS_PAT, ZENODO_TOKEN, ZENODO_API, BASE_URL, GITHUB_REPOSITORY
 """
 
 import os
 import sys
 import argparse
 import subprocess
+import tempfile
 from pathlib import Path
 
 ZERO = "0000000000000000000000000000000000000000"
 
-# ---------------- helpers ----------------
+# ---------------- small utils ----------------
 
 def echo(msg: str) -> None:
     sys.stderr.write(msg.rstrip() + "\n")
 
-def run_checked(cmd, *, text=False):
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, check=True)
+def run_checked(cmd, *, text=False, cwd=None):
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       text=text, check=True, cwd=cwd)
     return p.stdout if text else p.stdout
 
 # ---------------- git root configuration ----------------
@@ -32,12 +42,14 @@ def run_checked(cmd, *, text=False):
 GIT_DIR = os.environ.get("GIT_DIR")
 GIT_WORK_TREE = os.environ.get("GIT_WORK_TREE")
 
-if GIT_WORK_TREE:
-    ROOT = Path(GIT_WORK_TREE).resolve()
-else:
-    # Fallback: try environment then path-based discovery
+def _default_root() -> Path:
     ws = os.environ.get("GITHUB_WORKSPACE")
-    ROOT = Path(ws).resolve() if ws else Path(__file__).resolve().parents[2]
+    if ws:
+        return Path(ws).resolve()
+    return Path(__file__).resolve().parents[2]
+
+ROOT: Path = Path(GIT_WORK_TREE).resolve() if GIT_WORK_TREE else _default_root()
+FALLBACK_TMP: Path | None = None   # if we clone ourselves, we set ROOT here
 
 def git_args() -> list[str]:
     base = ["git"]
@@ -49,18 +61,87 @@ def git_args() -> list[str]:
         base += ["-C", str(ROOT)]
     return base
 
-def git(*args, text: bool = False):
+def git(*args, text: bool = False, check: bool = True) -> str | bytes:
     p = subprocess.run(git_args() + list(args),
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       text=text, check=True)
+                       text=text, check=check)
     return p.stdout if text else p.stdout
 
 def git_co(*args) -> bytes:
     return subprocess.check_output(git_args() + list(args))
 
+def have_git_worktree() -> bool:
+    try:
+        _ = git("rev-parse", "--is-inside-work-tree", text=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def try_set_root_to(path: Path) -> bool:
+    global ROOT
+    ROOT = path.resolve()
+    try:
+        _ = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-inside-work-tree"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def ensure_repo_or_clone(before_sha: str, after_sha: str):
+    """
+    Ensure we have a git worktree at ROOT. If not, attempt:
+      1) /github/workspace
+      2) Shallow clone of GITHUB_REPOSITORY into a temp dir; fetch both SHAs; checkout AFTER.
+    """
+    global ROOT, FALLBACK_TMP, GIT_DIR, GIT_WORK_TREE
+
+    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
+    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
+    echo(f"Initial ROOT guess={ROOT}")
+
+    if have_git_worktree():
+        echo(f"Detected git worktree at ROOT={ROOT}")
+        return
+
+    # Try the canonical container mount
+    ws2 = Path("/github/workspace")
+    if ws2.exists() and try_set_root_to(ws2):
+        echo(f"Detected git worktree at /github/workspace")
+        return
+
+    # Last resort: clone the repo ourselves (public clone assumed)
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        echo("FATAL: No git worktree and GITHUB_REPOSITORY is unset; cannot proceed.")
+        sys.exit(1)
+
+    FALLBACK_TMP = Path(tempfile.mkdtemp(prefix="pf_repo_"))
+    echo(f"No worktree. Falling back to shallow clone in {FALLBACK_TMP}")
+    url = f"https://github.com/{repo}.git"
+
+    # Initialize empty repo and fetch SHAs explicitly (works even for rewritten history)
+    run_checked(["git", "init"], cwd=FALLBACK_TMP)
+    run_checked(["git", "remote", "add", "origin", url], cwd=FALLBACK_TMP)
+    # Fetch AFTER (head) with depth 1, then fetch BEFORE (base) without checkout
+    run_checked(["git", "fetch", "--no-tags", "--depth", "1", "origin", after_sha], cwd=FALLBACK_TMP)
+    # BEFORE might be older; fetch without depth restriction to ensure availability
+    try:
+        run_checked(["git", "fetch", "--no-tags", "origin", before_sha], cwd=FALLBACK_TMP)
+    except subprocess.CalledProcessError:
+        # If BEFORE cannot be fetched (e.g., zero sha or unreachable), we continue; diff will fail clearly later
+        echo(f"Warning: could not fetch BEFORE sha {before_sha}")
+
+    run_checked(["git", "checkout", "--detach", after_sha], cwd=FALLBACK_TMP)
+
+    # Now point all git invocations to this clone
+    ROOT = FALLBACK_TMP
+    GIT_DIR = None      # we rely on -C ROOT pathing
+    GIT_WORK_TREE = None
+    echo(f"Using fallback cloned ROOT={ROOT}")
+
 def git_diff_names_z(base: str, head: str) -> list[str]:
-    out = git_co("-c", "core.quotepath=false",
-                 "diff", "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}")
+    out = git("-c", "core.quotepath=false",
+              "diff", "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}")
     parts = [p for p in out.split(b"\x00") if p]
     return [p.decode("utf-8", "strict") for p in parts]
 
@@ -109,12 +190,10 @@ def pr_check() -> int:
     head = os.environ.get("HEAD_SHA")
     if not base or not head:
         sys.exit("For --pr-check set BASE_SHA and HEAD_SHA.")
-    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
-    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
-    echo(f"ROOT={ROOT}")
+
+    ensure_repo_or_clone(base, head)
+
     echo(f"PR diff: {base}..{head}")
-    # Ensure repository is accessible
-    _ = git("rev-parse", "--show-toplevel", text=True).strip()
     paths = git_diff_names_z(base, head)
     md_repo_rel = pick_exactly_one_print_md(paths)
     title = read_title_from_blob(head, md_repo_rel)
@@ -125,22 +204,24 @@ def pr_check() -> int:
     return 0
 
 def push_build() -> int:
-    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
-    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
-    echo(f"ROOT={ROOT}")
-    # Verify repo
-    toplevel = git("rev-parse", "--show-toplevel", text=True).strip()
-    echo(f"git toplevel: {toplevel}")
-
     before = os.environ.get("GITHUB_BEFORE")
     after  = os.environ.get("GITHUB_AFTER")
     if not before or not after:
         sys.exit("Set GITHUB_BEFORE and GITHUB_AFTER for push pipeline.")
+    # Guard for created-ref case
     if before == ZERO:
+        # We'll resolve parent of AFTER after we ensure repo/clone
+        pass
+
+    ensure_repo_or_clone(before, after)
+
+    if before == ZERO:
+        # AFTER must exist in our clone; compute parent
         prev = git("rev-list", "-n", "1", f"{after}~1", text=True).strip()
         if not prev:
             sys.exit("Cannot determine base for first commit.")
         before = prev
+
     echo(f"Push diff: {before}..{after}")
 
     paths = git_diff_names_z(before, after)
@@ -180,7 +261,7 @@ def push_build() -> int:
     # 7) assets push (optional)
     assets_pat = os.environ.get("ASSETS_PAT", "")
     if assets_pat:
-        import tempfile, shutil
+        import shutil
         versions_dir = md_path.parent / "versions"
         latest = sorted(versions_dir.glob("*.yml"))
         if latest:
@@ -188,7 +269,7 @@ def push_build() -> int:
             with tempfile.TemporaryDirectory() as td:
                 tdp = Path(td)
                 clone_url = f"https://{assets_pat}@github.com/siran/assets.git"
-                run_checked(["git", "clone", "--depth=1", clone_url, "assets"])
+                run_checked(["git", "clone", "--depth=1", clone_url, "assets"], cwd=tdp)
                 repo = tdp / "assets"
                 dest = repo / "preferredframe" / title / doi_safe
                 dest.mkdir(parents=True, exist_ok=True)
