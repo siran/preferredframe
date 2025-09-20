@@ -225,7 +225,14 @@ def push_build() -> int:
     echo(f"Push diff: {before}..{after}")
 
     paths = git_diff_names_z(before, after)
-    md_repo_rel = pick_exactly_one_print_md(paths)
+    md_paths = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
+    if len(md_paths) == 0:
+        print("No PNPMD .md changes in push range; nothing to build. Exiting 0.")
+        return 0
+    if len(md_paths) > 1:
+        sys.exit(f"Exactly one .md must be changed (got {len(md_paths)}).")
+    md_repo_rel = md_paths[0]
+
     md_path = ROOT / md_repo_rel
 
     # 1) validate (original .md)

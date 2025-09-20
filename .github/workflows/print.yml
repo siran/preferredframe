@@ -2,6 +2,7 @@ name: PNPMD to Zenodo (push)
 
 on:
   push:
+    branches: [ "main" ]
     paths:
       - "preferredframe/prints/**/*.md"
   workflow_dispatch: {}
