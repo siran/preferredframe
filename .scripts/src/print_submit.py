@@ -38,14 +38,11 @@ def require_env(name: str) -> str:
 
 def read_title_from_md(md: Path) -> str:
     first = md.read_text(encoding="utf-8").splitlines()[0].strip()
-    return first[2:].strip() if first.startswith("% ") else md.stem
+    return first[2:].strip() if first.startswith("% ") else die('Could not extract title')
 
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--md", required=True, help="Path to PNPMD .md (from MR).")
-    ap.add_argument("--title", help="Explicit title; defaults to first header line or stem.")
-    ap.add_argument("--concept", help="Concept DOI to version (optional). If omitted, creates a new concept.")
     args = ap.parse_args()
 
     ZENODO_TOKEN = require_env("ZENODO_TOKEN")
@@ -58,11 +55,13 @@ def main():
     md = Path(args.md).resolve()
     if not md.exists():
         die(f"Missing file: {md}")
-    pdf = md.with_suffix(".pdf")
-    title = args.title or read_title_from_md(md)
+    title = read_title_from_md(md)
 
     sys.stderr.write(f"[validate] {md}\n")
     run([sys.executable, str(SRC / "validate_pnpmd.py"), str(md)])
+
+
+    # PDFs are made out of the pnpmd
 
     sys.stderr.write(f"[pandoc] -> {pdf}\n")
     run([sys.executable, str(SRC / "make_pdf.py"), str(md), str(pdf)])
