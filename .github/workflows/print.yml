@@ -67,8 +67,9 @@ jobs:
           pip install requests pyyaml
           echo "PY=/tool_venv/bin/python" >> "$GITHUB_ENV"
           echo "PIP=/tool_venv/bin/pip"   >> "$GITHUB_ENV"
-          $PY -V
-          $PIP -V
+          # check inside this step with direct path, not $PY
+          /tool_venv/bin/python -V
+          /tool_venv/bin/pip -V
 
       - name: Install pandoc-crossref
         run: |
