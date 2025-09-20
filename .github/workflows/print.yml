@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Ensure git in container (before checkout)
-        shell: bash
+        shell: sh
         run: |
           set -e
           command -v git || { apt-get update -y && apt-get install -y git; }
@@ -41,7 +41,7 @@ jobs:
           pip install requests pyyaml
 
       - name: Install pandoc-crossref
-        shell: bash
+        shell: sh
         run: |
           set -e
           VER=0.3.17.0

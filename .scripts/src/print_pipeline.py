@@ -3,17 +3,16 @@
 print_pipeline.py
 
 Modes:
-- PR gate (CI):    python print_pipeline.py --pr-check
+- PR gate (CI/local):    python print_pipeline.py --pr-check
   * Uses BASE_SHA, HEAD_SHA (env).
   * Ensures exactly one .md changed under preferredframe/prints/**.
-  * Enforces ASCII-only Title (first '% ' line or stem). Exit 1 with clear msg if not.
+  * Enforces ASCII-only Title by reading the file from GIT (git show HEAD_SHA:path).
+  * Emits explicit PASS/FAIL lines.
 
-- Push pipeline:   python print_pipeline.py
+- Push pipeline (CI/local):   python print_pipeline.py
   * Uses GITHUB_BEFORE, GITHUB_AFTER (env).
-  * Detects the one changed .md, validates ASCII Title, calls builders, publishes to Zenodo,
-    writes version sidecar, pushes artifacts to siran/assets.
-
-No YAML metaprogramming; all logic here.
+  * Detects the one changed .md, validates ASCII Title from filesystem,
+    builds artifacts, publishes to Zenodo, writes sidecar, pushes to siran/assets.
 """
 
 from __future__ import annotations
@@ -38,31 +37,43 @@ def need(name: str) -> str:
     return v
 
 def git_changed_paths(base: str, head: str) -> list[str]:
-    # NUL-separated, no C-quoting → safe UTF-8
     out = run(["git","-c","core.quotepath=false","diff","--name-only","-z", f"{base}...{head}"])
     parts = [p for p in out.split(b"\x00") if p]
     return [p.decode("utf-8", "strict") for p in parts]
 
-def pick_one_md_under_prints(base: str, head: str) -> Path:
+def pick_one_md_under_prints(base: str, head: str) -> str:
     paths = git_changed_paths(base, head)
     print("Changed files:")
     for p in paths: print(p)
     md = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
-    print("\nChanged PNPMD .md files:")
+    print("\nChanged print .md files:")  # renamed for clarity
     for p in md: print(p)
-    if len(md) != 1:
+    ok = (len(md) == 1)
+    print(f"Check 1: exactly one .md under preferredframe/prints — {'PASSED' if ok else 'FAILED'}")
+    if not ok:
         die(f"Exactly one .md must be changed (got {len(md)}).")
-    return ROOT / md[0]
+    return md[0]
 
-def extract_title(md_path: Path) -> str:
+def extract_title_from_fs(md_path: Path) -> str:
     with md_path.open("r", encoding="utf-8") as f:
         first = f.readline().strip()
     return first[2:].strip() if first.startswith("% ") else md_path.stem
 
+def extract_title_from_git(head_sha: str, repo_rel_path: str) -> str:
+    spec = f"{head_sha}:{repo_rel_path}"
+    out = run(["git","show", spec], text=False)
+    first_line = out.splitlines()[0].decode("utf-8", "strict") if out else ""
+    first = first_line.strip()
+    return first[2:].strip() if first.startswith("% ") else Path(repo_rel_path).stem
+
 def enforce_ascii_title(title: str):
+    ok = True
     try:
         title.encode("ascii")
     except UnicodeEncodeError:
+        ok = False
+    print(f"Check 2: ASCII-only Title — {'PASSED' if ok else 'FAILED'}")
+    if not ok:
         die(f"ERROR: Title must be ASCII-only (replace Unicode like ‘–’ with '-'). Found: {title!r}")
 
 def build_and_publish(md_path: Path, title: str):
@@ -144,17 +155,19 @@ def main():
     if args and args[0] == "--pr-check":
         base = need("BASE_SHA")
         head = need("HEAD_SHA")
-        md_path = pick_one_md_under_prints(base, head)
-        title = extract_title(md_path)
+        md_repo_rel = pick_one_md_under_prints(base, head)
+        title = extract_title_from_git(head, md_repo_rel)
         enforce_ascii_title(title)
         print("PR gate OK.")
         return
 
-    # push mode
     before = need("GITHUB_BEFORE")
     after  = need("GITHUB_AFTER")
-    md_path = pick_one_md_under_prints(before, after)
-    title = extract_title(md_path)
+    md_repo_rel = pick_one_md_under_prints(before, after)
+    md_path = ROOT / md_repo_rel
+    if not md_path.exists():
+        die(f"File not found in checkout: {md_path}")
+    title = extract_title_from_fs(md_path)
     enforce_ascii_title(title)
     build_and_publish(md_path, title)
     print("Push pipeline OK.")

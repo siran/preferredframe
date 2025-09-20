@@ -3,32 +3,33 @@
 submit_pnpmd.py
 
 Usage:
-  python .scripts/src/submit_pnpmd.py 'path/to/My Paper.md' [--use-gh]
+  python .scripts/src/submit_pnpmd.py 'path/to/My Paper.md' [--use-gh] [--no-preflight]
 
 Behavior:
 - Reads local file, extracts Title from first '% ' line (Authors from second).
-- Writes to preferredframe/prints/<Title>/<Title>.<ext> with a .yml sidecar (UTF-8).
+- Writes to preferredframe/prints/<Title>/<Title>.<ext> with sidecar <Title>/<Title>.sidecar.yml (UTF-8).
 - If source is in a git repo, records origin repo/commit/author/email/date.
-- Uses a dedicated git worktree per submission branch (no touching your dirty main).
+- Uses a dedicated git worktree per submission branch (no touching your main).
 - Always bases the submission branch on upstream/main (clean).
 - Pushes the branch; default prints compare URL. With --use-gh, tries GitHub CLI.
+- Preflight: runs the PR gate locally (same as CI) unless --no-preflight.
 - Idempotent: safe re-runs. Cleans the temporary worktree at the end.
 
 Strictness:
 - Title/destination filename are NOT modified.
 - Rejects: path separators, NUL, OS-problem chars, and ANY non-ASCII in Title.
-  (If rejected, the script exits with a clear error—fix the file’s `% Title`.)
+- Branch name is derived from Title via safe substitution (invalid ref chars → '-').
 """
 
-import argparse, subprocess, sys, shutil, re
+import argparse, subprocess, sys, shutil, re, os
 from pathlib import Path
 import datetime, yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WT_BASE = ROOT / ".tmp" / "submit_worktrees"
 
-def run(cmd, cwd=None, check=True, text=True):
-    return subprocess.run(cmd, cwd=cwd, check=check, text=text,
+def run(cmd, cwd=None, check=True, text=True, env=None):
+    return subprocess.run(cmd, cwd=cwd, check=check, text=text, env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
 
 def try_run(cmd, cwd=None):
@@ -73,11 +74,9 @@ def extract_header_fields(md_file: Path):
     return title, authors
 
 def assert_safe_component(label: str, s: str):
-    # forbid path seps/NUL and OS-problem chars
     forbidden = set('/\\\x00:*?"<>|')
     if any(ch in forbidden for ch in s):
         sys.exit(f"ERROR: {label} contains forbidden characters. Value: {s!r}")
-    # ASCII-only policy for Title (reject any Unicode)
     if any(ord(ch) > 127 for ch in s):
         sys.exit(f"ERROR: {label} must be ASCII-only (replace Unicode like ‘–’ with '-'). Value: {s!r}")
 
@@ -85,13 +84,13 @@ def write_sidecar(dest_md: Path, *, title: str, authors: str, original_filename:
     side = {
         "title": title,
         "authors": authors or None,
-        "filename": dest_md.name,
+        "filename": dest_md.name,          # stored name (Title.ext)
         "original_filename": original_filename,
         **origin,
         "submitted_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     side = {k:v for k,v in side.items() if v}
-    yml = dest_md.with_suffix(".yml")
+    yml = dest_md.parent / f"{title}.sidecar.yml"  # <Title>.sidecar.yml
     yml.write_text(yaml.safe_dump(side, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return yml
 
@@ -121,7 +120,6 @@ def ensure_worktree(branch: str) -> Path:
     WT_BASE.mkdir(parents=True, exist_ok=True)
     wt = WT_BASE / branch
     wt_posix = wt.as_posix()
-    # Reuse existing worktree: reset to upstream/main for clean base
     for ent in list_worktrees():
         if ent.get("worktree") == wt_posix:
             run(["git","fetch","upstream","main"], cwd=ROOT)
@@ -155,14 +153,44 @@ def push_with_retry(branch: str, cwd: Path):
         if has_upstream: run(["git","push","origin", branch], cwd=cwd)
         else:            run(["git","push","-u","origin", branch], cwd=cwd)
     except subprocess.CalledProcessError:
-        # diverged → safe force with lease
         run(["git","push","--force-with-lease","-u","origin", branch], cwd=cwd)
+
+def pr_preflight(wt: Path):
+    base_sha = run(["git","rev-parse","upstream/main"], cwd=ROOT)
+    head_sha = run(["git","rev-parse","HEAD"], cwd=wt)
+    env = os.environ.copy()
+    env["BASE_SHA"] = base_sha
+    env["HEAD_SHA"] = head_sha
+    p = subprocess.run(
+        ["python", ".scripts/src/print_pipeline.py", "--pr-check"],
+        cwd=ROOT, env=env, text=True
+    )
+    if p.returncode != 0:
+        sys.exit("Preflight PR-check failed. Fix the issues above and re-run.")
+
+def make_branch_name(title: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", title)
+    safe = re.sub(r"-{2,}", "-", safe).strip("-")
+    if not safe:
+        sys.exit("ERROR: Title produced an empty branch name after sanitization for branch.")
+    branch = f"submit-{safe}"
+    try:
+        run(["git", "check-ref-format", "--branch", branch], cwd=ROOT)
+    except subprocess.CalledProcessError:
+        sys.exit(
+            "ERROR: Branch name derived from Title is not a valid git branch name.\n"
+            f"Derived: {branch!r}\n"
+            "Please adjust the Title to an ASCII, ref-safe form and re-run."
+        )
+    return branch
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src_path")
     ap.add_argument("--use-gh", action="store_true",
                     help="Use GitHub CLI if available (default: print PR URL)")
+    ap.add_argument("--no-preflight", action="store_true",
+                    help="Skip local PR gate preflight (not recommended)")
     args = ap.parse_args()
 
     src = Path(args.src_path).resolve()
@@ -175,8 +203,8 @@ def main():
     title, authors = extract_header_fields(src)
     assert_safe_component("Title", title)
 
-    base = re.sub(r"[^A-Za-z0-9._-]+", "-", f"submit-{title}").strip("-") or "submit-paper"
-    safe_branch = base
+    safe_branch = make_branch_name(title)
+
     wt = ensure_worktree(safe_branch)
 
     try:
@@ -196,6 +224,9 @@ def main():
         run_allow_noop_commit(["git","commit","-m", f"Submit {title}"], cwd=wt)
 
         push_with_retry(safe_branch, wt)
+
+        if not args.no_preflight:
+            pr_preflight(wt)
 
         owner = parse_origin_owner()
         compare = f"https://github.com/siran/preferredframe/compare/main...{owner}:{safe_branch}?expand=1" if owner else ""
