@@ -13,7 +13,7 @@ jobs:
       image: pandoc/latex:latest
     defaults:
       run:
-        shell: sh  # container may not have bash
+        shell: sh
     permissions:
       contents: read
     env:
@@ -21,47 +21,48 @@ jobs:
       BASE_URL: https://preferredframe.com
 
     steps:
-      - name: Ensure git (and curl) in container BEFORE checkout
+      - name: Ensure git, curl, python, pip (before checkout)
         run: |
           set -eu
-          if command -v git >/dev/null 2>&1; then
-            git --version
-          else
-            if command -v apt-get >/dev/null 2>&1; then
+          have() { command -v "$1" >/dev/null 2>&1; }
+          install_pkgs() {
+            if have apt-get; then
               apt-get update -y
-              apt-get install -y git curl
-            elif command -v apk >/dev/null 2>&1; then
-              apk add --no-cache git curl
-            elif command -v microdnf >/dev/null 2>&1; then
-              microdnf install -y git curl
-            elif command -v dnf >/dev/null 2>&1; then
-              dnf install -y git curl
-            elif command -v yum >/dev/null 2>&1; then
-              yum install -y git curl
-            elif command -v zypper >/dev/null 2>&1; then
-              zypper --non-interactive install git curl
+              apt-get install -y git curl python3 python3-pip
+            elif have apk; then
+              apk add --no-cache git curl python3 py3-pip
+            elif have microdnf; then
+              microdnf install -y git curl python3 python3-pip || microdnf install -y git curl python3
+              have pip3 || curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+            elif have dnf; then
+              dnf install -y git curl python3 python3-pip || dnf install -y git curl python3
+              have pip3 || curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+            elif have yum; then
+              yum install -y git curl python3 python3-pip || yum install -y git curl python3
+              have pip3 || curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+            elif have zypper; then
+              zypper --non-interactive install git curl python3 python3-pip || zypper --non-interactive install git curl python3
+              have pip3 || curl -sS https://bootstrap.pypa.io/get-pip.py | python3
             else
-              echo "No supported package manager found to install git." >&2
+              echo "No supported package manager found." >&2
               exit 1
             fi
-            git --version
-          fi
+          }
+          have git && have python3 && have pip3 || install_pkgs
+          git --version
+          python3 --version
+          pip3 --version
 
       - name: Checkout (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Install Python deps
         run: |
           set -eu
-          python -m pip install --upgrade pip
-          pip install requests pyyaml
+          python3 -m pip install --upgrade pip
+          pip3 install requests pyyaml
 
       - name: Install pandoc-crossref
         run: |
@@ -83,4 +84,4 @@ jobs:
           BASE_URL:          ${{ env.BASE_URL }}
         run: |
           set -eu
-          python .scripts/src/print_pipeline.py
+          python3 .scripts/src/print_pipeline.py
