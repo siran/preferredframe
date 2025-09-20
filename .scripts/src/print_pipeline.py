@@ -4,85 +4,67 @@ print_pipeline.py
 
 PR gate:   --pr-check  (diff BASE..HEAD; title from HEAD blob; ASCII-only)
 Push build: validate -> pnp.md -> html/pdf (from pnp.md) -> Zenodo -> sidecars -> assets
+
+Relies on explicit git rooting if provided:
+  GIT_DIR, GIT_WORK_TREE  (recommended in CI)
+Otherwise falls back to discovered ROOT (repo toplevel).
 """
 
-import os, sys, argparse, subprocess
+import os
+import sys
+import argparse
+import subprocess
 from pathlib import Path
 
 ZERO = "0000000000000000000000000000000000000000"
 
-# ---------- diagnostics ----------
-def echo(msg): sys.stderr.write(msg.rstrip() + "\n")
+# ---------------- helpers ----------------
+
+def echo(msg: str) -> None:
+    sys.stderr.write(msg.rstrip() + "\n")
 
 def run_checked(cmd, *, text=False):
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, check=True)
     return p.stdout if text else p.stdout
 
-# ---------- repo root detection ----------
-def is_git_dir(p: Path) -> bool:
-    try:
-        subprocess.run(["git", "-C", str(p), "rev-parse", "--is-inside-work-tree"],
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
+# ---------------- git root configuration ----------------
 
-def candidates_from_env_and_paths() -> list[Path]:
-    c = []
-    # Current working dir first (what the runner actually has)
-    c.append(Path(os.getcwd()).resolve())
-    # GitHub defaults
-    for envk in ("GITHUB_WORKSPACE",):
-        v = os.environ.get(envk)
-        if v: c.append(Path(v).resolve())
-    # Common GH container mount
-    c.append(Path("/github/workspace"))
-    # Path derived from this file
-    c.append(Path(__file__).resolve().parents[2])
-    # Walk up from cwd a few levels (just in case)
-    cwd = Path(os.getcwd()).resolve()
-    for i in range(5):
-        c.append(cwd)
-        cwd = cwd.parent
-    # De-dup preserving order
-    seen, out = set(), []
-    for p in c:
-        if p not in seen:
-            out.append(p); seen.add(p)
-    return out
+GIT_DIR = os.environ.get("GIT_DIR")
+GIT_WORK_TREE = os.environ.get("GIT_WORK_TREE")
 
-def find_repo_root() -> Path:
-    echo("== Repo root detection ==")
-    echo(f"pwd: {Path(os.getcwd()).resolve()}")
-    echo(f"GITHUB_WORKSPACE: {os.environ.get('GITHUB_WORKSPACE','(unset)')}")
-    echo(f"__file__: {Path(__file__).resolve()}")
-    for cand in candidates_from_env_and_paths():
-        try:
-            top = subprocess.run(["git", "-C", str(cand), "rev-parse", "--show-toplevel"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-            root = Path(top.stdout.strip()).resolve()
-            echo(f"git top OK @ {cand} -> {root}")
-            return root
-        except subprocess.CalledProcessError:
-            continue
-    echo("FATAL: could not locate a git worktree. Check that actions/checkout ran in this job.")
-    sys.exit(1)
+if GIT_WORK_TREE:
+    ROOT = Path(GIT_WORK_TREE).resolve()
+else:
+    # Fallback: try environment then path-based discovery
+    ws = os.environ.get("GITHUB_WORKSPACE")
+    ROOT = Path(ws).resolve() if ws else Path(__file__).resolve().parents[2]
 
-ROOT = find_repo_root()
+def git_args() -> list[str]:
+    base = ["git"]
+    if GIT_DIR:
+        base += ["--git-dir", GIT_DIR]
+    if GIT_WORK_TREE:
+        base += ["--work-tree", GIT_WORK_TREE]
+    else:
+        base += ["-C", str(ROOT)]
+    return base
 
-def git_co(*args) -> bytes:
-    return subprocess.check_output(["git", "-C", str(ROOT)] + list(args))
-
-def git(*args, text=False) -> str | bytes:
-    p = subprocess.run(["git", "-C", str(ROOT)] + list(args),
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, check=True)
+def git(*args, text: bool = False):
+    p = subprocess.run(git_args() + list(args),
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       text=text, check=True)
     return p.stdout if text else p.stdout
 
+def git_co(*args) -> bytes:
+    return subprocess.check_output(git_args() + list(args))
+
 def git_diff_names_z(base: str, head: str) -> list[str]:
-    out = git("-c", "core.quotepath=false", "diff",
-              "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}")
+    out = git_co("-c", "core.quotepath=false",
+                 "diff", "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}")
     parts = [p for p in out.split(b"\x00") if p]
     return [p.decode("utf-8", "strict") for p in parts]
+
+# ---------------- PNPMD flow helpers ----------------
 
 def pick_exactly_one_print_md(paths: list[str]) -> str:
     md = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
@@ -97,8 +79,10 @@ def read_title_from_blob(head_sha: str, repo_rel_path: str) -> str:
         data = git_co("show", f"{head_sha}:{repo_rel_path}")
         for raw in data.splitlines():
             s = raw.decode("utf-8", "strict").strip()
-            if not s: continue
-            if s.startswith("% "): return s[2:].strip()
+            if not s:
+                continue
+            if s.startswith("% "):
+                return s[2:].strip()
             break
     except Exception:
         pass
@@ -107,8 +91,10 @@ def read_title_from_blob(head_sha: str, repo_rel_path: str) -> str:
 def read_title_from_fs(p: Path) -> str:
     for ln in p.read_text(encoding="utf-8").splitlines():
         s = ln.strip()
-        if not s: continue
-        if s.startswith("% "): return s[2:].strip()
+        if not s:
+            continue
+        if s.startswith("% "):
+            return s[2:].strip()
         break
     return p.stem
 
@@ -116,11 +102,19 @@ def assert_ascii_title(title: str):
     if any(ord(ch) > 127 for ch in title):
         sys.exit("Title must be ASCII-only (replace Unicode like ‘–’ with '-').")
 
-def pr_check():
-    base = os.environ.get("BASE_SHA"); head = os.environ.get("HEAD_SHA")
+# ---------------- modes ----------------
+
+def pr_check() -> int:
+    base = os.environ.get("BASE_SHA")
+    head = os.environ.get("HEAD_SHA")
     if not base or not head:
         sys.exit("For --pr-check set BASE_SHA and HEAD_SHA.")
-    echo(f"PR check diff: {base}..{head}")
+    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
+    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
+    echo(f"ROOT={ROOT}")
+    echo(f"PR diff: {base}..{head}")
+    # Ensure repository is accessible
+    _ = git("rev-parse", "--show-toplevel", text=True).strip()
     paths = git_diff_names_z(base, head)
     md_repo_rel = pick_exactly_one_print_md(paths)
     title = read_title_from_blob(head, md_repo_rel)
@@ -130,22 +124,16 @@ def pr_check():
     print("PR gate OK.")
     return 0
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--pr-check", action="store_true")
-    args = ap.parse_args()
+def push_build() -> int:
+    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
+    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
+    echo(f"ROOT={ROOT}")
+    # Verify repo
+    toplevel = git("rev-parse", "--show-toplevel", text=True).strip()
+    echo(f"git toplevel: {toplevel}")
 
-    # Extra diagnostics
-    echo("== Diagnostics ==")
-    try:
-        echo("git rev-parse --show-toplevel: " + git("rev-parse", "--show-toplevel", text=True).strip())
-    except Exception as e:
-        echo(f"git rev-parse failed: {e}")
-
-    if args.pr_check:
-        return pr_check()
-
-    before = os.environ.get("GITHUB_BEFORE"); after = os.environ.get("GITHUB_AFTER")
+    before = os.environ.get("GITHUB_BEFORE")
+    after  = os.environ.get("GITHUB_AFTER")
     if not before or not after:
         sys.exit("Set GITHUB_BEFORE and GITHUB_AFTER for push pipeline.")
     if before == ZERO:
@@ -159,7 +147,7 @@ def main():
     md_repo_rel = pick_exactly_one_print_md(paths)
     md_path = ROOT / md_repo_rel
 
-    # 1) validate
+    # 1) validate (original .md)
     run_checked([sys.executable, str(ROOT / ".scripts/src/validate_pnpmd.py"), str(md_path)])
 
     # 2) .pnp.md (normalize + preprocess) — source of truth for rendering
@@ -216,6 +204,18 @@ def main():
                 run_checked(["git", "-C", str(repo), "push"])
 
     print("Pipeline finished successfully.")
+    return 0
+
+# ---------------- main ----------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pr-check", action="store_true")
+    args = ap.parse_args()
+
+    if args.pr_check:
+        return pr_check()
+    return push_build()
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
