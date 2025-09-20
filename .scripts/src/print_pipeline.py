@@ -22,19 +22,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ZERO = "0000000000000000000000000000000000000000"
 
+def ensure_repo_root():
+    # Force working dir to repo root for safety
+    os.chdir(ROOT)
+    if not (ROOT / ".git").exists():
+        sys.exit(f"Not a git repository at {ROOT}. Did checkout run?")
+
 def sh(cmd, *, text=False, cwd=None):
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       text=text, check=True, cwd=cwd)
+                       text=text, check=True, cwd=cwd or ROOT)
     return p.stdout if text else p.stdout
 
 def sh_co(cmd, *, cwd=None):
-    return subprocess.check_output(cmd, cwd=cwd)
+    return subprocess.check_output(cmd, cwd=cwd or ROOT)
 
 def git_diff_names_z(base: str, head: str) -> list[str]:
     out = sh_co([
         "git", "-c", "core.quotepath=false",
         "diff", "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}"
-    ])
+    ], cwd=ROOT)
     parts = [p for p in out.split(b"\x00") if p]
     return [p.decode("utf-8", "strict") for p in parts]
 
@@ -49,7 +55,7 @@ def pick_exactly_one_print_md(changed_paths: list[str]) -> str:
 
 def read_title_from_blob(head_sha: str, repo_rel_path: str) -> str:
     try:
-        data = sh_co(["git", "show", f"{head_sha}:{repo_rel_path}"])
+        data = sh_co(["git", "show", f"{head_sha}:{repo_rel_path}"], cwd=ROOT)
         for raw in data.splitlines():
             line = raw.decode("utf-8", "strict").strip()
             if not line: continue
@@ -72,6 +78,7 @@ def assert_ascii_title(title: str):
         sys.exit("Title must be ASCII-only (replace Unicode like ‘–’ with '-').")
 
 def pr_check():
+    ensure_repo_root()
     base = os.environ.get("BASE_SHA")
     head = os.environ.get("HEAD_SHA")
     if not base or not head:
@@ -93,13 +100,14 @@ def main():
     if args.pr_check:
         return pr_check()
 
+    ensure_repo_root()
+
     before = os.environ.get("GITHUB_BEFORE")
     after  = os.environ.get("GITHUB_AFTER")
     if not before or not after:
         sys.exit("Set GITHUB_BEFORE and GITHUB_AFTER for push pipeline.")
     if before == ZERO:
-        # created-ref case (first commit on branch): use parent of after
-        prev = sh(["git", "rev-list", "-n", "1", f"{after}~1"], text=True).strip()
+        prev = sh(["git", "rev-list", "-n", "1", f"{after}~1"], text=True, cwd=ROOT).strip()
         if not prev:
             sys.exit("Cannot determine base for first commit.")
         before = prev
@@ -109,19 +117,19 @@ def main():
     md_path = ROOT / md_repo_rel
 
     # 1) validate (original .md)
-    sh([sys.executable, str(ROOT / ".scripts/src/validate_pnpmd.py"), str(md_path)])
+    sh([sys.executable, str(ROOT / ".scripts/src/validate_pnpmd.py"), str(md_path)], cwd=ROOT)
 
-    # 2) .pnp.md (normalize + preprocess)  —— MUST precede all rendering
+    # 2) .pnp.md (normalize + preprocess)
     pnp_md = md_path.with_suffix(".pnp.md")
-    sh([sys.executable, str(ROOT / ".scripts/src/make_pnpmd.py"), str(md_path), str(pnp_md)])
+    sh([sys.executable, str(ROOT / ".scripts/src/make_pnpmd.py"), str(md_path), str(pnp_md)], cwd=ROOT)
 
     # 3) HTML (from .pnp.md)
     html_path = md_path.with_suffix(".html")
-    sh([sys.executable, str(ROOT / ".scripts/src/make_html.py"), str(pnp_md), str(html_path)])
+    sh([sys.executable, str(ROOT / ".scripts/src/make_html.py"), str(pnp_md), str(html_path)], cwd=ROOT)
 
     # 4) PDF (from .pnp.md)
     pdf_path = md_path.with_suffix(".pdf")
-    sh([sys.executable, str(ROOT / ".scripts/src/make_pdf.py"), str(pnp_md), str(pdf_path)])
+    sh([sys.executable, str(ROOT / ".scripts/src/make_pdf.py"), str(pnp_md), str(pdf_path)], cwd=ROOT)
 
     # 5) Zenodo: primary = original .md; attach pnp.md/html/pdf
     title = read_title_from_fs(md_path)
@@ -133,10 +141,10 @@ def main():
         "--attach",  str(html_path),
         "--attach",  str(pdf_path),
         "--title",   title
-    ])
+    ], cwd=ROOT)
 
-    # 6) sidecars (uses env to form URLs)
-    sh([sys.executable, str(ROOT / ".scripts/src/write_version_sidecar.py"), str(md_path)])
+    # 6) sidecars
+    sh([sys.executable, str(ROOT / ".scripts/src/write_version_sidecar.py"), str(md_path)], cwd=ROOT)
 
     # 7) assets push (optional)
     assets_pat = os.environ.get("ASSETS_PAT", "")
