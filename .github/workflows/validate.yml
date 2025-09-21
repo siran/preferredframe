@@ -3,7 +3,7 @@ name: PNPMD Validate & Preview (PR)
 on:
   pull_request:
     branches:
-          - main
+      - main
 
 permissions:
   contents: read
