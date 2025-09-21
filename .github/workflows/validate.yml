@@ -26,12 +26,9 @@ jobs:
 
       - name: Locate exactly one changed Markdown file
         id: pick
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -e
-          FILES=$(git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- 'preferredframe/prints/**/*.md' ':!**/README.md' || true)
+          FILES=$(git log origin/main.. --name-only --pretty="" | grep '\.md$' | grep -v 'README.md' | sort -u || true)
           COUNT=$(printf "%s\n" "$FILES" | sed '/^\s*$/d' | wc -l)
           echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
           [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the PR (got $COUNT)."; exit 1; }
