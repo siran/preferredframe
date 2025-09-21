@@ -12,7 +12,6 @@ on:
 
 jobs:
   validate:
-    if: ${{ github.repository_owner == 'preferredframe' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
