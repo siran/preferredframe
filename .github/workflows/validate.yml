@@ -1,74 +1,48 @@
-name: PNPMD Validate & Preview (PR)
+name: validate
 
 on:
+  push:
+    branches-ignore: [ main ]
+    paths:
+      - 'preferredframe/prints/**/*.md'
   pull_request:
-    branches:
-      - main
-
-permissions:
-  contents: read
-  pull-requests: write
+    branches: [ main ]
+    paths:
+      - 'preferredframe/prints/**/*.md'
 
 jobs:
-  preview:
+  validate:
+    if: ${{ github.repository_owner == 'preferredframe' }}
     runs-on: ubuntu-latest
-    container:
-      image: pandoc/latex:latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Ensure git + curl
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install pandoc + crossref + minimal TeX
         run: |
-          set -e
-          command -v git  || (apt-get update -y && apt-get install -y git)
-          command -v curl || (apt-get update -y && apt-get install -y curl)
+          sudo apt-get update
+          sudo apt-get install -y pandoc pandoc-crossref texlive-xetex texlive-fonts-recommended texlive-plain-generic
 
-      - name: Pick exactly one changed .md in PR
-        id: pick
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Validate PNPMD (build pnp.md/html/pdf)
         run: |
-          set -eu
-          FILES=$(git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- 'preferredframe/prints/**/*.md' ':!**/README.md' || true)
-          COUNT=$(printf "%s\n" "$FILES" | sed '/^\s*$/d' | wc -l)
-          echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
-          [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the PR (got $COUNT)."; exit 1; }
-          MD="$FILES"
-          echo "md=$MD"                  >> "$GITHUB_OUTPUT"
-          echo "pnp_md=${MD%.md}.pnp.md" >> "$GITHUB_OUTPUT"
-          echo "html=${MD%.md}.html"     >> "$GITHUB_OUTPUT"
-          echo "pdf=${MD%.md}.pdf"       >> "$GITHUB_OUTPUT"
+          python ./.scripts/src/validate_pnpmd.py
 
-      # Advisory lint only (silent pass)
-      - name: PNPMD lint (non-blocking)
-        continue-on-error: true
-        run: python .scripts/src/validate_pnpmd.py "${{ steps.pick.outputs.md }}"
-
-      - name: Install pandoc-crossref
-        run: |
-          set -e
-          VER=0.3.17.0
-          curl -fsSL -o xref.tar.xz "https://github.com/lierdakil/pandoc-crossref/releases/download/v$VER/pandoc-crossref-Linux.tar.xz"
-          tar -xJf xref.tar.xz
-          install -m 0755 pandoc-crossref /usr/local/bin/pandoc-crossref
-          pandoc-crossref --version
-
-      - name: Generate .pnp.md
-        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
-
-      - name: Render HTML (from .pnp.md)
-        run: python .scripts/src/make_html.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.html }}"
-
-      - name: Render PDF (from .pnp.md)
-        run: python .scripts/src/make_pdf.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.pdf }}"
-
-      - name: Upload PR artifacts
+      - name: Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pnpmd-preview
+          name: validator-outputs
           path: |
-            ${{ steps.pick.outputs.pnp_md }}
-            ${{ steps.pick.outputs.html }}
-            ${{ steps.pick.outputs.pdf }}
+            preferredframe/prints/**/*.pnp.md
+            preferredframe/prints/**/*.html
+            preferredframe/prints/**/*.pdf
+          if-no-files-found: warn

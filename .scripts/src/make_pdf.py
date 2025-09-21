@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Deterministic PDF build for PNPMD using pandoc.
-No citeproc yet (kept minimal by request).
+Deterministic PDF build for PNPMD using pandoc + xelatex.
+Includes citeproc and crossref.
 """
 from pathlib import Path
 import sys, subprocess
@@ -15,17 +15,25 @@ def main():
         sys.exit(2)
     md = Path(sys.argv[1]).resolve()
     pdf = Path(sys.argv[2]).resolve()
+    bib = md.parent / "generated.bib"
 
-    run([
+    cmd = [
         "pandoc", str(md),
-        "--from", "gfm+yaml_metadata_block",
-        "--pdf-engine", "xelatex",
+        "--from", "markdown+yaml_metadata_block",
         "--toc", "--toc-depth=2",
+        "--number-sections",
         "--standalone",
+        "--reference-links",
+        "--citeproc", "-M", "link-citations=true",
         "-F", "pandoc-crossref",
+        "--pdf-engine=xelatex",
         "-o", str(pdf),
-    ])
-    print(f"PDF written: {pdf}")
+    ]
+    if bib.exists():
+        cmd.extend(["--bibliography", str(bib)])
+
+    run(cmd)
+    print(f"[make_pdf] PDF written: {pdf}")
 
 if __name__ == "__main__":
     main()

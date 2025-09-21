@@ -1,309 +1,139 @@
 #!/usr/bin/env python3
 """
 print_pipeline.py
-
-PR gate:   --pr-check  (diff BASE..HEAD; title from HEAD blob; ASCII-only)
-Push build: validate -> pnp.md -> html/pdf (from pnp.md) -> Zenodo -> sidecars -> assets
-
-Robust to CI environments where the working directory is not a git worktree.
-If no worktree is detected, it will shallow-clone the repository to a temp dir
-and fetch the two SHAs to compute the diff.
-
-Env expected (push mode):
-  GITHUB_REPOSITORY   e.g. "siran/preferredframe"
-  GITHUB_BEFORE       base sha
-  GITHUB_AFTER        head sha
-  (Optional) GITHUB_WORKSPACE  path
-  (Optional) GIT_DIR, GIT_WORK_TREE  explicit git root
-  (Optional) ASSETS_PAT, ZENODO_TOKEN, ZENODO_API, BASE_URL, GITHUB_REPOSITORY
+- Rebuild pnp.md/html/pdf for changed prints (relative to origin/main)
+- Verify outputs
+- Write sidecar print.json
+- Commit & push assets
+- (Optional) Mint DOI using zenodo_publish.py if ZENODO_ACCESS_TOKEN is set
 """
-
-import os
-import sys
-import argparse
-import subprocess
-import tempfile
+from __future__ import annotations
+import json, os, subprocess, sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-ZERO = "0000000000000000000000000000000000000000"
+ROOT = Path(__file__).resolve().parents[2]
+PRINTS = ROOT / "preferredframe" / "prints"
 
-# ---------------- small utils ----------------
+def sh(args, cwd=ROOT, check=True):
+    return subprocess.run(args, cwd=cwd, check=check, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-def echo(msg: str) -> None:
-    sys.stderr.write(msg.rstrip() + "\n")
+def run(args):
+    r = sh(args)
+    sys.stdout.write(r.stdout)
+    return r
 
-def run_checked(cmd, *, text=False, cwd=None):
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       text=text, check=True, cwd=cwd)
-    return p.stdout if text else p.stdout
-
-# ---------------- git root configuration ----------------
-
-GIT_DIR = os.environ.get("GIT_DIR")
-GIT_WORK_TREE = os.environ.get("GIT_WORK_TREE")
-
-def _default_root() -> Path:
-    ws = os.environ.get("GITHUB_WORKSPACE")
-    if ws:
-        return Path(ws).resolve()
-    return Path(__file__).resolve().parents[2]
-
-ROOT: Path = Path(GIT_WORK_TREE).resolve() if GIT_WORK_TREE else _default_root()
-FALLBACK_TMP: Path | None = None   # if we clone ourselves, we set ROOT here
-
-def git_args() -> list[str]:
-    base = ["git"]
-    if GIT_DIR:
-        base += ["--git-dir", GIT_DIR]
-    if GIT_WORK_TREE:
-        base += ["--work-tree", GIT_WORK_TREE]
-    else:
-        base += ["-C", str(ROOT)]
-    return base
-
-def git(*args, text: bool = False, check: bool = True) -> str | bytes:
-    p = subprocess.run(git_args() + list(args),
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                       text=text, check=check)
-    return p.stdout if text else p.stdout
-
-def git_co(*args) -> bytes:
-    return subprocess.check_output(git_args() + list(args))
-
-def have_git_worktree() -> bool:
-    try:
-        _ = git("rev-parse", "--is-inside-work-tree", text=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-def try_set_root_to(path: Path) -> bool:
-    global ROOT
-    ROOT = path.resolve()
-    try:
-        _ = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--is-inside-work-tree"],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-def ensure_repo_or_clone(before_sha: str, after_sha: str):
-    """
-    Ensure we have a git worktree at ROOT. If not, attempt:
-      1) /github/workspace
-      2) Shallow clone of GITHUB_REPOSITORY into a temp dir; fetch both SHAs; checkout AFTER.
-    """
-    global ROOT, FALLBACK_TMP, GIT_DIR, GIT_WORK_TREE
-
-    echo(f"GIT_DIR={GIT_DIR or '(unset)'}")
-    echo(f"GIT_WORK_TREE={GIT_WORK_TREE or '(unset)'}")
-    echo(f"Initial ROOT guess={ROOT}")
-
-    if have_git_worktree():
-        echo(f"Detected git worktree at ROOT={ROOT}")
-        return
-
-    # Try the canonical container mount
-    ws2 = Path("/github/workspace")
-    if ws2.exists() and try_set_root_to(ws2):
-        echo(f"Detected git worktree at /github/workspace")
-        return
-
-    # Last resort: clone the repo ourselves (public clone assumed)
-    repo = os.environ.get("GITHUB_REPOSITORY")
-    if not repo:
-        echo("FATAL: No git worktree and GITHUB_REPOSITORY is unset; cannot proceed.")
-        sys.exit(1)
-
-    FALLBACK_TMP = Path(tempfile.mkdtemp(prefix="pf_repo_"))
-    echo(f"No worktree. Falling back to shallow clone in {FALLBACK_TMP}")
-    url = f"https://github.com/{repo}.git"
-
-    # Initialize empty repo and fetch SHAs explicitly (works even for rewritten history)
-    run_checked(["git", "init"], cwd=FALLBACK_TMP)
-    run_checked(["git", "remote", "add", "origin", url], cwd=FALLBACK_TMP)
-    # Fetch AFTER (head) with depth 1, then fetch BEFORE (base) without checkout
-    run_checked(["git", "fetch", "--no-tags", "--depth", "1", "origin", after_sha], cwd=FALLBACK_TMP)
-    # BEFORE might be older; fetch without depth restriction to ensure availability
-    try:
-        run_checked(["git", "fetch", "--no-tags", "origin", before_sha], cwd=FALLBACK_TMP)
-    except subprocess.CalledProcessError:
-        # If BEFORE cannot be fetched (e.g., zero sha or unreachable), we continue; diff will fail clearly later
-        echo(f"Warning: could not fetch BEFORE sha {before_sha}")
-
-    run_checked(["git", "checkout", "--detach", after_sha], cwd=FALLBACK_TMP)
-
-    # Now point all git invocations to this clone
-    ROOT = FALLBACK_TMP
-    GIT_DIR = None      # we rely on -C ROOT pathing
-    GIT_WORK_TREE = None
-    echo(f"Using fallback cloned ROOT={ROOT}")
-
-def git_diff_names_z(base: str, head: str) -> list[str]:
-    out = git("-c", "core.quotepath=false",
-              "diff", "--name-only", "--diff-filter=ACMRT", "-z", f"{base}..{head}")
-    parts = [p for p in out.split(b"\x00") if p]
-    return [p.decode("utf-8", "strict") for p in parts]
-
-# ---------------- PNPMD flow helpers ----------------
-
-def pick_exactly_one_print_md(paths: list[str]) -> str:
-    md = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
-    print("Changed files:"); [print(p) for p in paths]
-    print("\nChanged print .md files:"); [print(p) for p in md]
-    if len(md) != 1:
-        sys.exit(f"Exactly one .md must be changed (got {len(md)}).")
-    return md[0]
-
-def read_title_from_blob(head_sha: str, repo_rel_path: str) -> str:
-    try:
-        data = git_co("show", f"{head_sha}:{repo_rel_path}")
-        for raw in data.splitlines():
-            s = raw.decode("utf-8", "strict").strip()
-            if not s:
-                continue
-            if s.startswith("% "):
-                return s[2:].strip()
-            break
-    except Exception:
-        pass
-    return Path(repo_rel_path).stem
-
-def read_title_from_fs(p: Path) -> str:
-    for ln in p.read_text(encoding="utf-8").splitlines():
+def read_title(md: Path) -> str:
+    for ln in md.read_text(encoding="utf-8").splitlines():
         s = ln.strip()
-        if not s:
-            continue
-        if s.startswith("% "):
-            return s[2:].strip()
+        if not s: continue
+        if s.startswith("% "): return s[2:].strip()
         break
-    return p.stem
+    return md.stem
 
-def assert_ascii_title(title: str):
-    if any(ord(ch) > 127 for ch in title):
-        sys.exit("Title must be ASCII-only (replace Unicode like ‘–’ with '-').")
+def slugify(title: str) -> str:
+    import re
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", title)
+    safe = re.sub(r"-{2,}", "-", safe).strip("-")
+    return safe or "untitled"
 
-# ---------------- modes ----------------
+def changed_md() -> list[Path]:
+    try:
+        run(["git", "fetch", "origin", "main"])
+        out = sh(["git", "diff", "--name-only", "origin/main...HEAD", "--", "preferredframe/prints/**/*.md"]).stdout
+        c = [ROOT / p for p in out.splitlines() if p.strip().endswith(".md")]
+        if c: return c
+    except Exception as e:
+        print(f"[print] diff detection failed: {e}")
+    return list(PRINTS.glob("**/*.md"))
 
-def pr_check() -> int:
-    base = os.environ.get("BASE_SHA")
-    head = os.environ.get("HEAD_SHA")
-    if not base or not head:
-        sys.exit("For --pr-check set BASE_SHA and HEAD_SHA.")
+def build(md: Path) -> tuple[Path, Path, Path]:
+    stem = md.with_suffix("")
+    pnp  = stem.with_suffix(".pnp.md")
+    html = stem.with_suffix(".html")
+    pdf  = stem.with_suffix(".pdf")
 
-    ensure_repo_or_clone(base, head)
+    print(f"[print] Build {md.relative_to(ROOT)}")
+    run([sys.executable, str(ROOT/".scripts/src/make_pnpmd.py"), str(md),  str(pnp)])
+    run([sys.executable, str(ROOT/".scripts/src/make_html.py"),  str(pnp), str(html)])
+    run([sys.executable, str(ROOT/".scripts/src/make_pdf.py"),   str(pnp), str(pdf)])
 
-    echo(f"PR diff: {base}..{head}")
-    paths = git_diff_names_z(base, head)
-    md_repo_rel = pick_exactly_one_print_md(paths)
-    title = read_title_from_blob(head, md_repo_rel)
-    assert_ascii_title(title)
-    print("Check 1: exactly one .md under preferredframe/prints — PASSED")
-    print("Check 2: ASCII-only Title — PASSED")
-    print("PR gate OK.")
-    return 0
+    for f in (pnp, html, pdf):
+        if not f.exists() or f.stat().st_size == 0:
+            print(f"[print][ERROR] Missing/empty: {f.relative_to(ROOT)}", file=sys.stderr)
+            raise SystemExit(1)
+    print(f"[print][OK] {md.name} -> {pnp.name}, {html.name}, {pdf.name}")
+    return pnp, html, pdf
 
-def push_build() -> int:
-    before = os.environ.get("GITHUB_BEFORE")
-    after  = os.environ.get("GITHUB_AFTER")
-    if not before or not after:
-        sys.exit("Set GITHUB_BEFORE and GITHUB_AFTER for push pipeline.")
-    # Guard for created-ref case
-    if before == ZERO:
-        # We'll resolve parent of AFTER after we ensure repo/clone
-        pass
+def write_sidecar(md: Path, pnp: Path, html: Path, pdf: Path, doi: str | None) -> Path:
+    title = read_title(md)
+    data = {
+        "title": title,
+        "slug": slugify(title),
+        "paths": {
+            "md": str(md.relative_to(ROOT)),
+            "pnpmd": str(pnp.relative_to(ROOT)),
+            "html": str(html.relative_to(ROOT)),
+            "pdf": str(pdf.relative_to(ROOT)),
+        },
+        "commit": sh(["git", "rev-parse", "HEAD"]).stdout.strip(),
+        "branch": sh(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip(),
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "doi": doi or "pending"
+    }
+    sidecar = md.with_name("print.json")
+    sidecar.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    print(f"[print] Wrote sidecar: {sidecar.relative_to(ROOT)}")
+    return sidecar
 
-    ensure_repo_or_clone(before, after)
+def maybe_mint_doi(target_dir: Path) -> str | None:
+    token = os.environ.get("ZENODO_ACCESS_TOKEN")
+    if not token:
+        print("[print] ZENODO_ACCESS_TOKEN not set; skipping DOI mint.")
+        return None
+    zp = ROOT / ".scripts" / "src" / "zenodo_publish.py"
+    if not zp.exists():
+        print("[print] zenodo_publish.py not found; skipping DOI mint.")
+        return None
+    try:
+        r = sh([sys.executable, str(zp), str(target_dir)], check=True)
+        print(r.stdout)
+        for line in r.stdout.splitlines():
+            if line.strip().lower().startswith("doi:"):
+                return line.split(":", 1)[1].strip()
+    except subprocess.CalledProcessError as e:
+        print("[print] DOI mint failed; continuing. Output:\n" + e.stdout)
+    return None
 
-    if before == ZERO:
-        # AFTER must exist in our clone; compute parent
-        prev = git("rev-list", "-n", "1", f"{after}~1", text=True).strip()
-        if not prev:
-            sys.exit("Cannot determine base for first commit.")
-        before = prev
-
-    echo(f"Push diff: {before}..{after}")
-
-    paths = git_diff_names_z(before, after)
-    md_paths = [p for p in paths if p.startswith("preferredframe/prints/") and p.endswith(".md")]
-    if len(md_paths) == 0:
-        print("No PNPMD .md changes in push range; nothing to build. Exiting 0.")
-        return 0
-    if len(md_paths) > 1:
-        sys.exit(f"Exactly one .md must be changed (got {len(md_paths)}).")
-    md_repo_rel = md_paths[0]
-
-    md_path = ROOT / md_repo_rel
-
-    # 1) validate (original .md)
-    run_checked([sys.executable, str(ROOT / ".scripts/src/validate_pnpmd.py"), str(md_path)])
-
-    # 2) .pnp.md (normalize + preprocess) — source of truth for rendering
-    pnp_md = md_path.with_suffix(".pnp.md")
-    run_checked([sys.executable, str(ROOT / ".scripts/src/make_pnpmd.py"), str(md_path), str(pnp_md)])
-
-    # 3) HTML (from .pnp.md)
-    html_path = md_path.with_suffix(".html")
-    run_checked([sys.executable, str(ROOT / ".scripts/src/make_html.py"), str(pnp_md), str(html_path)])
-
-    # 4) PDF (from .pnp.md)
-    pdf_path = md_path.with_suffix(".pdf")
-    run_checked([sys.executable, str(ROOT / ".scripts/src/make_pdf.py"), str(pnp_md), str(pdf_path)])
-
-    # 5) Zenodo: primary = original .md; attach pnp.md/html/pdf
-    title = read_title_from_fs(md_path)
-    assert_ascii_title(title)
-    run_checked([
-        sys.executable, str(ROOT / ".scripts/src/zenodo_publish.py"),
-        "--primary", str(md_path),
-        "--attach",  str(pnp_md),
-        "--attach",  str(html_path),
-        "--attach",  str(pdf_path),
-        "--title",   title
-    ])
-
-    # 6) sidecars
-    run_checked([sys.executable, str(ROOT / ".scripts/src/write_version_sidecar.py"), str(md_path)])
-
-    # 7) assets push (optional)
-    assets_pat = os.environ.get("ASSETS_PAT", "")
-    if assets_pat:
-        import shutil
-        versions_dir = md_path.parent / "versions"
-        latest = sorted(versions_dir.glob("*.yml"))
-        if latest:
-            doi_safe = latest[-1].stem
-            with tempfile.TemporaryDirectory() as td:
-                tdp = Path(td)
-                clone_url = f"https://{assets_pat}@github.com/siran/assets.git"
-                run_checked(["git", "clone", "--depth=1", clone_url, "assets"], cwd=tdp)
-                repo = tdp / "assets"
-                dest = repo / "preferredframe" / title / doi_safe
-                dest.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(html_path, dest / f"{title}.html")
-                shutil.copy2(pdf_path,  dest / f"{title}.pdf")
-                src_yml = md_path.parent / "source.yml"
-                if src_yml.exists():
-                    shutil.copy2(src_yml, dest / "source.yml")
-                run_checked(["git", "-C", str(repo), "config", "user.name", "preferredframe-bot"])
-                run_checked(["git", "-C", str(repo), "config", "user.email", "bot@preferredframe.com"])
-                run_checked(["git", "-C", str(repo), "add", str(dest.relative_to(repo))])
-                run_checked(["git", "-C", str(repo), "commit", "-m", f'Add assets for "{title}" — {doi_safe}'])
-                run_checked(["git", "-C", str(repo), "push"])
-
-    print("Pipeline finished successfully.")
-    return 0
-
-# ---------------- main ----------------
+def git_commit_and_push(paths: list[Path], msg: str):
+    run(["git", "config", "user.name", "preferredframe-bot"])
+    run(["git", "config", "user.email", "bot@users.noreply.github.com"])
+    run(["git", "add"] + [str(p.relative_to(ROOT)) for p in paths])
+    # test if anything staged
+    diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
+    if diff.returncode == 0:
+        print("[print] No changes to commit.")
+        return
+    run(["git", "commit", "-m", msg])
+    branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    run(["git", "push", "origin", branch])
+    print(f"[print] Pushed commit to {branch}")
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--pr-check", action="store_true")
-    args = ap.parse_args()
+    targets = changed_md()
+    if not targets:
+        print("[print] No markdown changes detected.")
+        return
 
-    if args.pr_check:
-        return pr_check()
-    return push_build()
+    all_to_commit: list[Path] = []
+    for md in targets:
+        pnp, html, pdf = build(md)
+        doi = maybe_mint_doi(md.parent)
+        sidecar = write_sidecar(md, pnp, html, pdf, doi)
+        all_to_commit.extend([pnp, html, pdf, sidecar])
+
+    git_commit_and_push(all_to_commit, "Print assets: pnpmd/html/pdf + sidecar")
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

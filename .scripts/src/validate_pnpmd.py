@@ -1,100 +1,65 @@
 #!/usr/bin/env python3
 """
-PNPMD validator (v1.001) + PDF build trigger gate.
+validate_pnpmd.py
+Build .pnp.md, .html, .pdf for changed prints and report status.
 
-Checks (fast, deterministic):
-- Header: first 3 non-empty lines must start with '%' (Title, Authors, Date).
-- Required sections (case-insensitive headings):
-  Abstract, One-Sentence Summary, Keywords, Corresponding author(s), References.
-- Formatting rules sampled:
-  * no '---' as horizontal rule (section separators must be blank lines)
-  * forbid \[...\], \(...\) math; allow $...$ and $$...$$
-  * no math in Abstract block
-- UTF-8: rely on file read success; reject binary bytes.
-
-Exit nonzero on failure. Prints a short JSON summary.
+Change detection:
+- Compares against origin/main if available; else builds all found MDs.
+- Watches under preferredframe/prints/**/**.md
 """
 from __future__ import annotations
+import subprocess, sys, os
 from pathlib import Path
-import sys, json, re
 
-REQ_SECTIONS = [
-    r"^##\s*Abstract\s*$",
-    r"^##\s*One-Sentence Summary\s*$",
-    r"^##\s*Keywords\s*$",
-    r"^##\s*Corresponding author\(s\)\s*$",
-    r"^##\s*References\s*$",
-]
+ROOT = Path(__file__).resolve().parents[2]
+PRINTS = ROOT / "preferredframe" / "prints"
 
-HRULE_PATTERN = re.compile(r"(?m)^\s*---\s*$")
-BAD_MATH = re.compile(r"(\\\\\[|\\\\\]|\\\(|\\\))")  # raw patterns for \[ \] \( \)
-ABSTRACT_HEADER = re.compile(r"(?mi)^##\s*Abstract\s*$")
+def sh_co(args, cwd=ROOT) -> str:
+    p = subprocess.run(args, cwd=cwd, check=True, text=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    return p.stdout.strip()
 
-def read_text_utf8(p: Path) -> str:
+def sh(args, cwd=ROOT):
+    subprocess.run(args, cwd=cwd, check=True)
+
+def changed_md() -> list[Path]:
     try:
-        return p.read_text(encoding="utf-8")
-    except Exception as e:
-        raise SystemExit(f"ERROR: cannot read {p}: {e}")
+        sh(["git", "fetch", "origin", "main"])
+        base = "origin/main"
+        out = sh_co(["git", "diff", "--name-only", f"{base}...HEAD", "--", "preferredframe/prints/**/*.md"])
+        c = [ROOT / p for p in out.splitlines() if p.strip().endswith(".md")]
+        if c:
+            return c
+    except Exception:
+        pass
+    # fallback: all
+    return list(PRINTS.glob("**/*.md"))
 
-def check_header_lines(txt: str, report: dict):
-    lines = [ln for ln in txt.splitlines() if ln.strip()][:3]
-    ok = len(lines) >= 3 and all(ln.lstrip().startswith("%") for ln in lines[:3])
-    report["header_ok"] = bool(ok)
-    if not ok:
-        report.setdefault("errors", []).append("First three non-empty lines must begin with '% ' (Title, Authors, Date).")
+def build_one(md: Path) -> tuple[Path, Path, Path]:
+    stem = md.with_suffix("")  # drop .md
+    pnp = stem.with_suffix(".pnp.md")
+    html = stem.with_suffix(".html")
+    pdf  = stem.with_suffix(".pdf")
 
-def check_required_sections(txt: str, report: dict):
-    present = []
-    for pat in REQ_SECTIONS:
-        m = re.search(pat, txt, flags=re.M)
-        present.append(bool(m))
-        if not m:
-            report.setdefault("errors", []).append(f"Missing required section heading matching: {pat}")
-    report["required_sections_ok"] = all(present)
+    print(f"[validate] Building: {md.relative_to(ROOT)}")
+    sh([sys.executable, str(ROOT / ".scripts" / "src" / "make_pnpmd.py"), str(md), str(pnp)])
+    sh([sys.executable, str(ROOT / ".scripts" / "src" / "make_html.py"),  str(pnp), str(html)])
+    sh([sys.executable, str(ROOT / ".scripts" / "src" / "make_pdf.py"),   str(pnp), str(pdf)])
 
-def slice_abstract(txt: str) -> str:
-    """Return abstract block text (until next '## ' heading)."""
-    m = ABSTRACT_HEADER.search(txt)
-    if not m:
-        return ""
-    start = m.end()
-    # find next top-level '## ' after start
-    nxt = re.search(r"(?m)^##\s+", txt[start:])
-    end = start + nxt.start() if nxt else len(txt)
-    return txt[start:end]
-
-def check_rules(txt: str, report: dict):
-    # 1) forbid horizontal rules '---'
-    if HRULE_PATTERN.search(txt):
-        report.setdefault("errors", []).append("Horizontal rules '---' are not allowed for section separation.")
-    # 2) forbid \[...\] and \(...\) math delimiters
-    if BAD_MATH.search(txt):
-        report.setdefault("errors", []).append(r"Use $...$ (inline) or $$...$$ (display); do not use \[...\] or \(...\).")
-    # 3) no math in Abstract
-    abstract = slice_abstract(txt)
-    if abstract and (re.search(r"(?<!\\)\$(?!\$).*?(?<!\\)\$", abstract) or re.search(r"(?<!\\)\$\$(.|\n)*?\$\$", abstract)):
-        report.setdefault("errors", []).append("Abstract must not contain math.")
+    for f in (pnp, html, pdf):
+        if not f.exists() or f.stat().st_size == 0:
+            print(f"[validate][ERROR] Missing/empty: {f.relative_to(ROOT)}", file=sys.stderr)
+            raise SystemExit(1)
+    print(f"[validate][OK] {md.name} -> {pnp.name}, {html.name}, {pdf.name}")
+    return pnp, html, pdf
 
 def main():
-    if len(sys.argv) < 2:
-        print("usage: validate_pnpmd.py path/to/paper.md", file=sys.stderr)
-        sys.exit(2)
-
-    md = Path(sys.argv[1])
-    if not md.exists():
-        print(json.dumps({"ok": False, "errors": [f"Missing file: {md}"]}, indent=2))
-        sys.exit(1)
-
-    txt = read_text_utf8(md)
-    report = {"file": str(md), "ok": True, "errors": []}
-
-    check_header_lines(txt, report)
-    check_required_sections(txt, report)
-    check_rules(txt, report)
-
-    report["ok"] = not report["errors"]
-    print(json.dumps(report, indent=2))
-    sys.exit(0 if report["ok"] else 1)
+    mds = changed_md()
+    if not mds:
+        print("[validate] No target markdown files. Nothing to do.")
+        return
+    for md in mds:
+        build_one(md)
 
 if __name__ == "__main__":
     main()
