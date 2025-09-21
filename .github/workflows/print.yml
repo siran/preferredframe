@@ -7,7 +7,7 @@ on:
       - 'preferredframe/prints/**/*.md'
 
 permissions:
-  contents: write   # needed to commit sidecars/pnp.md back to repo
+  contents: write   # needed to commit sidecars/pnp.md back to repository
 
 env:
   ZENODO_API: https://sandbox.zenodo.org/api   # set to prod when ready
