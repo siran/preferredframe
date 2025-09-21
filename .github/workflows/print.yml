@@ -1,0 +1,163 @@
+name: PNPMD Publish on Main (push)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'preferredframe/prints/**/*.md'
+
+permissions:
+  contents: write   # needed to commit sidecars/pnp.md back to repo
+
+env:
+  ZENODO_API: https://sandbox.zenodo.org/api   # set to prod when ready
+  BASE_URL: https://preferredframe.com
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: pandoc/latex:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure git + curl + python + pip
+        run: |
+          set -e
+          apt-get update -y
+          apt-get install -y git curl python3 python3-venv python3-pip
+
+      - name: Python venv + deps
+        run: |
+          set -e
+          python3 -m venv /tool_venv
+          . /tool_venv/bin/activate
+          pip install --upgrade pip
+          pip install requests pyyaml
+          echo "PY=/tool_venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Install pandoc-crossref
+        run: |
+          set -e
+          VER=0.3.17.0
+          curl -fsSL -o xref.tar.xz "https://github.com/lierdakil/pandoc-crossref/releases/download/v$VER/pandoc-crossref-Linux.tar.xz"
+          tar -xJf xref.tar.xz
+          install -m 0755 pandoc-crossref /usr/local/bin/pandoc-crossref
+          pandoc-crossref --version
+
+      - name: Locate exactly one changed .md on push
+        id: pick
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER:  ${{ github.sha }}
+        run: |
+          set -eu
+          FILES=$(git diff --name-only --diff-filter=ACMRT "$BEFORE".."$AFTER" -- 'preferredframe/prints/**/*.md' ':!**/README.md' || true)
+          COUNT=$(printf "%s\n" "$FILES" | sed '/^\s*$/d' | wc -l)
+          echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
+          [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the push (got $COUNT)."; exit 1; }
+          MD="$FILES"
+          echo "md=$MD"                  >> "$GITHUB_OUTPUT"
+          echo "pnp_md=${MD%.md}.pnp.md" >> "$GITHUB_OUTPUT"
+          echo "html=${MD%.md}.html"     >> "$GITHUB_OUTPUT"
+          echo "pdf=${MD%.md}.pdf"       >> "$GITHUB_OUTPUT"
+
+      - name: Extract ASCII Title (first '% ' line)
+        id: title
+        run: |
+          set -eu
+          md="${{ steps.pick.outputs.md }}"
+          t=$(awk 'BEGIN{found=0} /^[[:space:]]*%[[:space:]]/ && found==0 {sub(/^[[:space:]]*%[[:space:]]*/,"",$0); print; found=1; exit}' "$md")
+          if [ -z "$t" ]; then
+            # fallback to basename without .md
+            t=$(basename "$md" .md)
+          fi
+          # enforce ASCII
+          if echo "$t" | LC_ALL=C grep -q '[^ -~]'; then
+            echo "Title must be ASCII-only: $t" >&2
+            exit 1
+          fi
+          echo "title=$t" >> "$GITHUB_OUTPUT"
+          echo "Title: $t"
+
+      - name: Generate .pnp.md
+        run: $PY .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
+
+      - name: Render HTML (from .pnp.md)
+        run: $PY .scripts/src/make_html.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.html }}"
+
+      - name: Render PDF (from .pnp.md)
+        run: $PY .scripts/src/make_pdf.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.pdf }}"
+
+      - name: Publish to Zenodo (mint DOI)
+        id: zen
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_API:   ${{ env.ZENODO_API }}
+        run: |
+          set -eu
+          md="${{ steps.pick.outputs.md }}"
+          pnp="${{ steps.pick.outputs.pnp_md }}"
+          html="${{ steps.pick.outputs.html }}"
+          pdf="${{ steps.pick.outputs.pdf }}"
+          title="${{ steps.title.outputs.title }}"
+
+          out=$($PY .scripts/src/zenodo_publish.py \
+              --primary "$md" \
+              --attach "$pnp" --attach "$html" --attach "$pdf" \
+              --title "$title")
+
+          echo "$out"
+          concept=$(echo "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("concept_doi",""))')
+          version=$(echo "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version_doi",""))')
+          record=$(echo "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("record_url",""))')
+
+          [ -n "$concept" ] && echo "concept_doi=$concept" >> "$GITHUB_OUTPUT"
+          [ -n "$version" ] && echo "version_doi=$version" >> "$GITHUB_OUTPUT"
+          [ -n "$record"  ] && echo "record_url=$record"   >> "$GITHUB_OUTPUT"
+
+      - name: Write version sidecar(s)
+        run: |
+          set -eu
+          md="${{ steps.pick.outputs.md }}"
+          concept="${{ steps.zen.outputs.concept_doi }}"
+          version="${{ steps.zen.outputs.version_doi }}"
+          rec="${{ steps.zen.outputs.record_url }}"
+          [ -n "$version" ] && [ -n "$concept" ] || { echo "Missing DOIs"; exit 1; }
+          $PY .scripts/src/write_version_sidecar.py "$md" "$version" "$concept" "$rec"
+
+      - name: Commit .pnp.md + sidecars back to repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          git config user.name  "preferredframe-bot"
+          git config user.email "bot@preferredframe.com"
+          git add "${{ steps.pick.outputs.pnp_md }}" \
+                  "$(dirname "${{ steps.pick.outputs.md }}")/versions" \
+                  "$(dirname "${{ steps.pick.outputs.md }}")/source.yml"
+          git commit -m "Publish: add .pnp.md and sidecars for ${{ steps.title.outputs.title }} (DOI ${{ steps.zen.outputs.version_doi }})" || true
+          git push
+
+      - name: Push HTML/PDF to siran/assets
+        env:
+          ASSETS_PAT: ${{ secrets.ASSETS_PAT }}
+        run: |
+          set -eu
+          md="${{ steps.pick.outputs.md }}"
+          title="${{ steps.title.outputs.title }}"
+          version="${{ steps.zen.outputs.version_doi }}"
+          doi_safe=$(echo "$version" | tr '/' '_')
+          tmp=$(mktemp -d)
+          git -C "$tmp" clone --depth=1 "https://${ASSETS_PAT}@github.com/siran/assets.git"
+          dest="$tmp/assets/preferredframe/$title/$doi_safe"
+          mkdir -p "$dest"
+          cp "${{ steps.pick.outputs.html }}" "$dest/${title}.html"
+          cp "${{ steps.pick.outputs.pdf }}"  "$dest/${title}.pdf"
+          git -C "$tmp/assets" config user.name  "preferredframe-bot"
+          git -C "$tmp/assets" config user.email "bot@preferredframe.com"
+          git -C "$tmp/assets" add "preferredframe/$title/$doi_safe"
+          git -C "$tmp/assets" commit -m "Add $title — $version"
+          git -C "$tmp/assets" push

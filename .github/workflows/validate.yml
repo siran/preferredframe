@@ -14,47 +14,49 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: pandoc/latex:latest
-
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      - name: Ensure git present
+      - name: Ensure git + curl
         run: |
           set -e
-          command -v git || (apt-get update -y && apt-get install -y git)
+          command -v git  || (apt-get update -y && apt-get install -y git)
+          command -v curl || (apt-get update -y && apt-get install -y curl)
 
-      - name: Locate exactly one changed Markdown file
+      - name: Pick exactly one changed .md in PR
         id: pick
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -e
-          FILES=$(git log origin/main.. --name-only --pretty="" | grep '\.md$' | grep -v 'README.md' | sort -u || true)
+          set -eu
+          FILES=$(git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- 'preferredframe/prints/**/*.md' ':!**/README.md' || true)
           COUNT=$(printf "%s\n" "$FILES" | sed '/^\s*$/d' | wc -l)
           echo "Changed PNPMD files:"; printf "%s\n" "$FILES"
           [ "$COUNT" -eq 1 ] || { echo "Exactly one .md must be changed in the PR (got $COUNT)."; exit 1; }
           MD="$FILES"
-          echo "md=$MD"                  >> $GITHUB_OUTPUT
-          echo "pnp_md=${MD%.md}.pnp.md" >> $GITHUB_OUTPUT
-          echo "html=${MD%.md}.html"     >> $GITHUB_OUTPUT
-          echo "pdf=${MD%.md}.pdf"       >> $GITHUB_OUTPUT
+          echo "md=$MD"                  >> "$GITHUB_OUTPUT"
+          echo "pnp_md=${MD%.md}.pnp.md" >> "$GITHUB_OUTPUT"
+          echo "html=${MD%.md}.html"     >> "$GITHUB_OUTPUT"
+          echo "pdf=${MD%.md}.pdf"       >> "$GITHUB_OUTPUT"
 
-      # Optional lint (silent pass; advisory only)
-      - name: Advisory PNPMD lint (non-blocking)
+      # Advisory lint only (silent pass)
+      - name: PNPMD lint (non-blocking)
         continue-on-error: true
         run: python .scripts/src/validate_pnpmd.py "${{ steps.pick.outputs.md }}"
-
-      - name: Generate PNPMD normalized file (.pnp.md)
-        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
 
       - name: Install pandoc-crossref
         run: |
           set -e
           VER=0.3.17.0
-          apt-get update -y && apt-get install -y curl
           curl -fsSL -o xref.tar.xz "https://github.com/lierdakil/pandoc-crossref/releases/download/v$VER/pandoc-crossref-Linux.tar.xz"
           tar -xJf xref.tar.xz
           install -m 0755 pandoc-crossref /usr/local/bin/pandoc-crossref
           pandoc-crossref --version
+
+      - name: Generate .pnp.md
+        run: python .scripts/src/make_pnpmd.py "${{ steps.pick.outputs.md }}" "${{ steps.pick.outputs.pnp_md }}"
 
       - name: Render HTML (from .pnp.md)
         run: python .scripts/src/make_html.py "${{ steps.pick.outputs.pnp_md }}" "${{ steps.pick.outputs.html }}"
