@@ -2,8 +2,8 @@ name: PNPMD Validate & Preview (PR)
 
 on:
   pull_request:
-    paths:
-      - 'preferredframe/prints/**/*.md'
+    branches:
+          - main
 
 permissions:
   contents: read
