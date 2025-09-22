@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# Render PNPMD → HTML using dockerized pandoc/latex (+ pandoc-crossref).
+# PNPMD → HTML via dockerized pandoc/latex (pdflatex image), with command tracing.
 import sys, subprocess, shlex
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def run(cmd): subprocess.run(cmd, check=True)
+def run(cmd):
+    print("++", " ".join(shlex.quote(c) for c in cmd))
+    subprocess.run(cmd, check=True)
 
 def main():
     if len(sys.argv) != 3:
@@ -33,21 +35,23 @@ def main():
     if has_bib:
         pandoc_cmd += ["--bibliography", str(rbib_rel)]
 
-    # show commands (-x) and fail fast; install crossref; then run pandoc
+    # POSIX sh (no bash). -e: exit on error, -x: trace, -c: run string.
     inner_cmd = " && ".join([
-        "set -xeuo pipefail",
-        "apt-get update",
-        "apt-get install -y pandoc-crossref",
+        "set -ex",
+        "if command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y pandoc-crossref; "
+        "elif command -v apk >/dev/null 2>&1; then apk add --no-cache pandoc-crossref; "
+        "else echo 'No known pkg mgr; assuming pandoc-crossref present' ; fi",
         " ".join(shlex.quote(x) for x in pandoc_cmd),
     ])
 
-    run([
+    cmd = [
         "docker","run","--rm",
         "-v", f"{ROOT}:/work","-w","/work",
-        "--entrypoint","/bin/bash",
+        "--entrypoint","/bin/sh",
         "pandoc/latex",
-        "-lc", inner_cmd
-    ])
+        "-ec", inner_cmd  # -e exit-on-error, -c run command
+    ]
+    run(cmd)
     print(f"[make_html] HTML written: {out_path}")
 
 if __name__ == "__main__":

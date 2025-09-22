@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# Render PNPMD → PDF using dockerized pandoc/latex (pdflatex) + crossref + citeproc.
+# PNPMD → PDF via dockerized pandoc/latex with pdflatex, tracing on.
 import sys, subprocess, shlex
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def run(cmd): subprocess.run(cmd, check=True)
+def run(cmd):
+    print("++", " ".join(shlex.quote(c) for c in cmd))
+    subprocess.run(cmd, check=True)
 
 def main():
     if len(sys.argv) != 3:
@@ -35,19 +37,21 @@ def main():
         pandoc_cmd += ["--bibliography", str(rbib_rel)]
 
     inner_cmd = " && ".join([
-        "set -xeuo pipefail",
-        "apt-get update",
-        "apt-get install -y pandoc-crossref",
+        "set -ex",
+        "if command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y pandoc-crossref; "
+        "elif command -v apk >/dev/null 2>&1; then apk add --no-cache pandoc-crossref; "
+        "else echo 'No known pkg mgr; assuming pandoc-crossref present' ; fi",
         " ".join(shlex.quote(x) for x in pandoc_cmd),
     ])
 
-    run([
+    cmd = [
         "docker","run","--rm",
         "-v", f"{ROOT}:/work","-w","/work",
-        "--entrypoint","/bin/bash",
+        "--entrypoint","/bin/sh",
         "pandoc/latex",
-        "-lc", inner_cmd
-    ])
+        "-ec", inner_cmd
+    ]
+    run(cmd)
     print(f"[make_pdf] PDF written: {out_path}")
 
 if __name__ == "__main__":
