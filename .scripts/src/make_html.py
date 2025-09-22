@@ -31,10 +31,11 @@ def main():
         "-o", str(rout),
     ]
     if has_bib:
-        pandoc_cmd[1:1] = []  # no-op; just keep structure
         pandoc_cmd += ["--bibliography", str(rbib_rel)]
 
+    # show commands (-x) and fail fast; install crossref; then run pandoc
     inner_cmd = " && ".join([
+        "set -xeuo pipefail",
         "apt-get update",
         "apt-get install -y pandoc-crossref",
         " ".join(shlex.quote(x) for x in pandoc_cmd),
@@ -43,8 +44,9 @@ def main():
     run([
         "docker","run","--rm",
         "-v", f"{ROOT}:/work","-w","/work",
+        "--entrypoint","/bin/bash",
         "pandoc/latex",
-        "bash","-lc", inner_cmd
+        "-lc", inner_cmd
     ])
     print(f"[make_html] HTML written: {out_path}")
 

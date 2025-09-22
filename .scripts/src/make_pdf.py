@@ -35,6 +35,7 @@ def main():
         pandoc_cmd += ["--bibliography", str(rbib_rel)]
 
     inner_cmd = " && ".join([
+        "set -xeuo pipefail",
         "apt-get update",
         "apt-get install -y pandoc-crossref",
         " ".join(shlex.quote(x) for x in pandoc_cmd),
@@ -43,8 +44,9 @@ def main():
     run([
         "docker","run","--rm",
         "-v", f"{ROOT}:/work","-w","/work",
+        "--entrypoint","/bin/bash",
         "pandoc/latex",
-        "bash","-lc", inner_cmd
+        "-lc", inner_cmd
     ])
     print(f"[make_pdf] PDF written: {out_path}")
 
