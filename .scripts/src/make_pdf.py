@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# PNPMD → PDF via dockerized pandoc/latex with pdflatex, tracing on.
+# PNPMD → PDF via dockerized pandoc/latex (pdflatex), with tracing and self-installing pandoc-crossref.
 import sys, subprocess, shlex
 from pathlib import Path
 
@@ -38,9 +38,16 @@ def main():
 
     inner_cmd = " && ".join([
         "set -ex",
-        "if command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y pandoc-crossref; "
-        "elif command -v apk >/dev/null 2>&1; then apk add --no-cache pandoc-crossref; "
-        "else echo 'No known pkg mgr; assuming pandoc-crossref present' ; fi",
+        "if command -v apt-get >/dev/null 2>&1; then apt-get update && apt-get install -y curl xz-utils; "
+        "elif command -v apk >/dev/null 2>&1; then apk add --no-cache curl xz; "
+        "fi",
+        "if ! command -v pandoc-crossref >/dev/null 2>&1; then "
+        "  curl -fsSL -o /tmp/pandoc-crossref.txz https://github.com/lierdakil/pandoc-crossref/releases/latest/download/pandoc-crossref-Linux.tar.xz && "
+        "  mkdir -p /usr/local/bin && tar -xJf /tmp/pandoc-crossref.txz -C /usr/local/bin && "
+        "  chmod +x /usr/local/bin/pandoc-crossref; "
+        "fi",
+        "pandoc --version",
+        "pandoc-crossref --version",
         " ".join(shlex.quote(x) for x in pandoc_cmd),
     ])
 
