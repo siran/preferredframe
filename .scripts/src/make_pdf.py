@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Render PNPMD → PDF using dockerized pandoc/latex (pdflatex) + crossref + citeproc.
-import sys, subprocess
+import sys, subprocess, shlex
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -9,8 +9,7 @@ def run(cmd): subprocess.run(cmd, check=True)
 
 def main():
     if len(sys.argv) != 3:
-        print("usage: make_pdf.py input.md output.pdf", file=sys.stderr)
-        sys.exit(2)
+        print("usage: make_pdf.py input.md output.pdf", file=sys.stderr); sys.exit(2)
 
     in_path  = Path(sys.argv[1]).resolve()
     out_path = Path(sys.argv[2]).resolve()
@@ -20,9 +19,7 @@ def main():
     has_bib = rbib.exists()
     rbib_rel = rbib.relative_to(ROOT) if has_bib else None
 
-    inner = [
-        "apt-get update",
-        "apt-get install -y pandoc-crossref",
+    pandoc_cmd = [
         "pandoc", str(rin),
         "--from", "markdown+yaml_metadata_block",
         "--standalone",
@@ -35,13 +32,19 @@ def main():
         "-o", str(rout),
     ]
     if has_bib:
-        inner += ["--bibliography", str(rbib_rel)]
+        pandoc_cmd += ["--bibliography", str(rbib_rel)]
+
+    inner_cmd = " && ".join([
+        "apt-get update",
+        "apt-get install -y pandoc-crossref",
+        " ".join(shlex.quote(x) for x in pandoc_cmd),
+    ])
 
     run([
         "docker","run","--rm",
         "-v", f"{ROOT}:/work","-w","/work",
         "pandoc/latex",
-        "bash","-lc"," ".join(map(str, inner))
+        "bash","-lc", inner_cmd
     ])
     print(f"[make_pdf] PDF written: {out_path}")
 
