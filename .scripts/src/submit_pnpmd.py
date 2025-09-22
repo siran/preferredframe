@@ -2,15 +2,14 @@
 """
 submit_pnpmd.py — PNPMD PR submitter (commit only the .md).
 
-Flow:
-  1) Read local .md (argv[1]); Title = first '% ' line (fallback: stem); enforce ASCII-only.
-  2) Branch name = submit-<slug>.
-     - If branch exists (local and/or remote), ask whether to delete.
-  3) Create clean branch from origin/<default>.
-  4) Copy .md → preferredframe/prints/<Title>/<Title>.md
-  5) Git add ONLY the .md; commit; push.
-  6) Print PR creation URL.
-  7) Checkout default branch; delete local topic branch (remote kept, unless --cleanup=remote).
+- Detect existing submit-<slug> branch; prompt to delete (local/remote).
+- Create fresh branch from origin/<default>.
+- Copy ONLY the .md → preferredframe/prints/<Title>/<Title>.md
+- Force-add (-f) to bypass .gitignore; commit; push.
+- Print PR URL; checkout default; delete local topic branch (remote optional).
+
+Usage:
+  submit_pnpmd.py /path/to/file.md [--cleanup {local,remote,none}]
 """
 
 from __future__ import annotations
@@ -19,11 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# --- shell helpers ------------------------------------------------------------
-
-def sh(args, cwd=ROOT, check=True, capture=False) -> str:
+def sh(args, *, capture=False, check=True) -> str:
     r = subprocess.run(
-        args, cwd=cwd, check=check, text=True,
+        args, cwd=ROOT, text=True, check=check,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.STDOUT if capture else None,
     )
@@ -31,8 +28,6 @@ def sh(args, cwd=ROOT, check=True, capture=False) -> str:
 
 def die(msg: str):
     print(msg, file=sys.stderr); sys.exit(1)
-
-# --- utils --------------------------------------------------------------------
 
 def read_title(md: Path) -> str:
     for ln in md.read_text(encoding="utf-8").splitlines():
@@ -53,13 +48,13 @@ def slugify(title: str) -> str:
 
 def origin_default_branch() -> str:
     ref = sh(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], capture=True)
-    if ref and ref.startswith("origin/"):
+    if ref.startswith("origin/"):
         return ref.split("/", 1)[1]
     for cand in ("main", "master"):
-        code = subprocess.run(["git", "ls-remote", "--heads", "origin", cand], cwd=ROOT,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
-        if code == 0: return cand
-    die("Could not determine default branch on origin.")
+        if subprocess.run(["git", "ls-remote", "--heads", "origin", cand], cwd=ROOT,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            return cand
+    die("Could not determine origin default branch.")
 
 def origin_https_url() -> str:
     url = sh(["git", "remote", "get-url", "origin"], capture=True).strip()
@@ -75,102 +70,112 @@ def origin_https_url() -> str:
     return url[:-4] if url.endswith(".git") else url
 
 def branch_exists_local(name: str) -> bool:
-    code = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{name}"], cwd=ROOT,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
-    return code == 0
+    return subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{name}"],
+                          cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 def branch_exists_remote(name: str) -> bool:
-    out = sh(["git", "ls-remote", "--heads", "origin", name], capture=True)
-    return bool(out.strip())
+    return bool(sh(["git", "ls-remote", "--heads", "origin", name], capture=True))
 
 def prompt_yn(q: str, default_no: bool = True) -> bool:
     yn = " [y/N]: " if default_no else " [Y/n]: "
-    ans = input(q + yn).strip().lower()
+    try:
+        ans = input(q + yn).strip().lower()
+    except EOFError:
+        return not default_no
     if not ans: return not default_no
     return ans.startswith("y")
-
-# --- main ---------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src_md", help="Path to local PNPMD .md")
     ap.add_argument("--cleanup", choices=["local", "remote", "none"], default="local",
-                    help="Post-push cleanup: delete local topic branch (default), also delete remote, or none.")
+                    help="After pushing, delete local topic branch (default), also delete remote, or do nothing.")
     args = ap.parse_args()
 
     src = Path(args.src_md).resolve()
-    if not src.exists(): die(f"File not found: {src}")
+    if not src.exists():
+        die(f"File not found: {src}")
 
-    title = read_title(src); assert_ascii(title)
+    title = read_title(src)
+    assert_ascii(title)
     slug  = slugify(title)
     branch = f"submit-{slug}"
 
-    # Ensure fresh remote refs
-    sh(["git", "fetch", "origin", "--prune"])
+    print(f"[submit] Source: {src}")
+    print(f"[submit] Title:  {title}")
+    print(f"[submit] Slug:   {slug}")
+    print(f"[submit] Branch: {branch}")
 
-    # Handle pre-existing branch
+    sh(["git", "fetch", "origin", "--prune"])
+    default = "main"
+
     exists_local  = branch_exists_local(branch)
     exists_remote = branch_exists_remote(branch)
     if exists_local or exists_remote:
-        print(f"Found existing branch '{branch}' "
-              f"(local={exists_local}, remote={exists_remote}).")
+        print(f"[submit] Found existing branch '{branch}' (local={exists_local}, remote={exists_remote})")
         if prompt_yn("Delete existing branch before proceeding?"):
             if exists_local:
-                # Move off branch if currently checked out
                 cur = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True)
                 if cur == branch:
-                    default = origin_default_branch()
                     sh(["git", "checkout", default])
                 sh(["git", "branch", "-D", branch])
-                print(" - deleted local branch")
+                print("[submit] - deleted local branch")
             if exists_remote:
-                # Ignore if remote not found at delete time
                 subprocess.run(["git", "push", "origin", "--delete", branch],
                                cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                print(" - deleted remote branch (if existed)")
+                print("[submit] - deleted remote branch (if existed)")
         else:
-            die("Aborting per user choice (branch exists).")
+            die("[submit] Aborting per user choice (branch exists).")
 
-    # Create clean topic branch from origin/<default>
-    default = origin_default_branch()
+    # Fresh topic branch
     sh(["git", "checkout", "-B", branch, f"origin/{default}"])
+    print(f"[submit] Switched to clean branch {branch} from origin/{default}")
 
-    # Copy ONLY the .md into repo
-    dest_dir = ROOT / "preferredframe" / "prints" / title
+    # Copy ONLY the .md → prints/<Title>/<Title>.md
+    dest_dir = ROOT / "prints" / title
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_md = dest_dir / f"{title}.md"
+    print(f"[submit] Copy → {dest_md.relative_to(ROOT)}")
     shutil.copy2(src, dest_md)
 
-    # Stage and commit ONLY the .md
-    sh(["git", "add", str(dest_md)])
-    # Allow no-change commit to be skipped gracefully
+    # Assert copy
+    if not dest_md.exists() or dest_md.stat().st_size == 0:
+        die("[submit] Copy failed or file empty after copy.")
+
+    # Status before add
+    print("[submit] git status (before add):")
+    print(sh(["git", "status", "--porcelain"], capture=True))
+
+    # Force-add (bypass .gitignore), commit iff changes exist
+    sh(["git", "add", "-f", str(dest_md)])  # -f: in case prints/ is ignored
+    print("[submit] git status (after add):")
+    print(sh(["git", "status", "--porcelain"], capture=True))
+
     committed = True
     try:
         sh(["git", "commit", "-m", f"Add print: {title}"])
+        print("[submit] Commit created.")
     except subprocess.CalledProcessError:
         committed = False
-        print("No changes to commit (identical content?). Continuing to push...")
+        print("[submit] No changes to commit (file identical?). Proceeding.")
 
-    # Push branch
+    # Always push the branch (even if no new commit) to open/refresh PR
     sh(["git", "push", "-u", "origin", branch])
-
-    # PR URL
     pr_url = f"{origin_https_url()}/pull/new/{branch}"
-    print("\nBranch pushed.")
-    print("Open this URL to create the PR:")
+    print("\n[submit] Branch pushed.")
+    print("[submit] Create/refresh PR at:")
     print(pr_url)
 
-    # Post-push: checkout default, delete local topic branch (default behavior)
+    # Cleanup: switch back; delete local topic; optional remote
     sh(["git", "checkout", default])
     if args.cleanup in ("local", "remote"):
-        # best-effort local delete
         subprocess.run(["git", "branch", "-D", branch], cwd=ROOT,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        print(f"Local branch '{branch}' deleted.")
+        print(f"[submit] Local branch '{branch}' deleted.")
     if args.cleanup == "remote":
         subprocess.run(["git", "push", "origin", "--delete", branch], cwd=ROOT,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        print(f"Remote branch '{branch}' deleted (PR would close).")
+        print(f"[submit] Remote branch '{branch}' deleted.")
 
 if __name__ == "__main__":
     main()
