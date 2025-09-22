@@ -1,39 +1,49 @@
 #!/usr/bin/env python3
-"""
-Deterministic PDF build for PNPMD using pandoc + xelatex.
-Includes citeproc and crossref.
-"""
-from pathlib import Path
+# Render PNPMD → PDF using dockerized pandoc/latex (pdflatex) + crossref + citeproc.
 import sys, subprocess
+from pathlib import Path
 
-def run(cmd):
-    subprocess.run(cmd, check=True)
+ROOT = Path(__file__).resolve().parents[2]
+
+def run(cmd): subprocess.run(cmd, check=True)
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) != 3:
         print("usage: make_pdf.py input.md output.pdf", file=sys.stderr)
         sys.exit(2)
-    md = Path(sys.argv[1]).resolve()
-    pdf = Path(sys.argv[2]).resolve()
-    bib = md.parent / "generated.bib"
 
-    cmd = [
-        "pandoc", str(md),
+    in_path  = Path(sys.argv[1]).resolve()
+    out_path = Path(sys.argv[2]).resolve()
+    rin  = in_path.relative_to(ROOT)
+    rout = out_path.relative_to(ROOT)
+    rbib = in_path.parent / "generated.bib"
+    has_bib = rbib.exists()
+    rbib_rel = rbib.relative_to(ROOT) if has_bib else None
+
+    inner = [
+        "apt-get update",
+        "apt-get install -y pandoc-crossref",
+        "pandoc", str(rin),
         "--from", "markdown+yaml_metadata_block",
+        "--standalone",
         "--toc", "--toc-depth=2",
         "--number-sections",
-        "--standalone",
         "--reference-links",
         "--citeproc", "-M", "link-citations=true",
         "-F", "pandoc-crossref",
-        "--pdf-engine=xelatex",
-        "-o", str(pdf),
+        "--pdf-engine=pdflatex",
+        "-o", str(rout),
     ]
-    if bib.exists():
-        cmd.extend(["--bibliography", str(bib)])
+    if has_bib:
+        inner += ["--bibliography", str(rbib_rel)]
 
-    run(cmd)
-    print(f"[make_pdf] PDF written: {pdf}")
+    run([
+        "docker","run","--rm",
+        "-v", f"{ROOT}:/work","-w","/work",
+        "pandoc/latex",
+        "bash","-lc"," ".join(map(str, inner))
+    ])
+    print(f"[make_pdf] PDF written: {out_path}")
 
 if __name__ == "__main__":
     main()

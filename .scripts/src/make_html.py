@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""
-make_html.py: Render Markdown/PNPMD to HTML with pandoc.
-Flags aligned with PNPMD v1.02 recommendations.
-"""
+# Render PNPMD → HTML using dockerized pandoc/latex (+ pandoc-crossref).
 import sys, subprocess
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def run(cmd): subprocess.run(cmd, check=True)
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) != 3:
         print("usage: make_html.py input.md output.html", file=sys.stderr)
         sys.exit(2)
 
-    md, out = Path(sys.argv[1]), Path(sys.argv[2])
-    bib = md.parent / "generated.bib"
-    cmd = [
-        "pandoc", str(md),
+    in_path  = Path(sys.argv[1]).resolve()
+    out_path = Path(sys.argv[2]).resolve()
+    rin  = in_path.relative_to(ROOT)
+    rout = out_path.relative_to(ROOT)
+    rbib = in_path.parent / "generated.bib"
+    has_bib = rbib.exists()
+    rbib_rel = rbib.relative_to(ROOT) if has_bib else None
+
+    inner = [
+        "apt-get update",
+        "apt-get install -y pandoc-crossref",
+        "pandoc", str(rin),
         "--from", "markdown+yaml_metadata_block",
         "--standalone",
         "--toc", "--toc-depth=2",
@@ -24,12 +31,18 @@ def main():
         "--reference-links",
         "--citeproc", "-M", "link-citations=true",
         "-F", "pandoc-crossref",
-        "-o", str(out)
     ]
-    if bib.exists():
-        cmd.extend(["--bibliography", str(bib)])
-    run(cmd)
-    print(f"[make_html] HTML written: {out}")
+    if has_bib:
+        inner += ["--bibliography", str(rbib_rel)]
+    inner += ["-o", str(rout)]
+
+    run([
+        "docker","run","--rm",
+        "-v", f"{ROOT}:/work","-w","/work",
+        "pandoc/latex",
+        "bash","-lc"," ".join(map(str, inner))
+    ])
+    print(f"[make_html] HTML written: {out_path}")
 
 if __name__ == "__main__":
     main()
