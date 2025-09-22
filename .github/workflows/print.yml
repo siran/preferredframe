@@ -9,7 +9,6 @@ on:
 
 jobs:
   print:
-    if: ${{ github.repository_owner == 'preferredframe' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,17 +20,8 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install pandoc + crossref + minimal TeX
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc pandoc-crossref texlive-xetex texlive-fonts-recommended texlive-plain-generic
-
-      - name: Build, verify, write sidecar, push assets
+      - id: print
+        name: Build, verify, sidecar, commit, push (docker pandoc)
         env:
           GITHUB_HEAD_REF: ${{ github.head_ref }}
           GITHUB_SHA: ${{ github.sha }}
@@ -39,14 +29,10 @@ jobs:
         run: |
           python ./.scripts/src/print_pipeline.py
 
-      - name: Upload print artifacts
+      - name: Upload print folder
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: print-assets
-          path: |
-            preferredframe/prints/**/*.pnp.md
-            preferredframe/prints/**/*.html
-            preferredframe/prints/**/*.pdf
-            preferredframe/prints/**/print.json
-          if-no-files-found: warn
+          name: print-${{ github.head_ref || github.run_id }}
+          path: ${{ steps.print.outputs.artifact_path }}
+          if-no-files-found: error

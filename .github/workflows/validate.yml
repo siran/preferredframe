@@ -21,27 +21,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install pandoc + crossref + minimal TeX
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc pandoc-crossref texlive-xetex texlive-fonts-recommended texlive-plain-generic
-
-      - name: Validate PNPMD (build pnp.md/html/pdf)
+      - id: validate
+        name: Build pnpmd/html/pdf (docker pandoc)
         run: |
           python ./.scripts/src/validate_pnpmd.py
 
-      - name: Upload build artifacts
+      - name: Upload folder as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validator-outputs
-          path: |
-            preferredframe/prints/**/*.pnp.md
-            preferredframe/prints/**/*.html
-            preferredframe/prints/**/*.pdf
-          if-no-files-found: warn
+          name: validator-${{ github.head_ref || github.run_id }}
+          path: ${{ steps.validate.outputs.artifact_path }}
+          if-no-files-found: error
