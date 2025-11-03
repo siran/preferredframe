@@ -39,9 +39,10 @@ scanned:
 []
 site:
   html_canonical: "https://preferredframe.com/prints/2025-11-03/The PNP Markdown Standard - PNPMDv1/The PNP Markdown Standard - PNPMDv1.html"
+  permalink: "https://preferredframe.com/q/pnpmd-markdown-specification-pnpmd-v1-0-4--zenodo.396614"
 zenodo:
   deposition_id: 396614
   reserved_doi: 10.5281/zenodo.396614
   concept_doi: null
-  doi: null
-  record_id: null
+  doi: 10.5072/zenodo.396614
+  record_id: 396614
