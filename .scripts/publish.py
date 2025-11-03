@@ -1,38 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Preferred Frame publisher (PNPMD-driven, commit = publication; DOI reserved first, then minted)
+Preferred Frame publisher (PNPMD-driven, commit = publication; DOI reserved first)
 
-Changes in this version:
-  - publication_type fixed to "article"
-  - DOI is reserved FIRST (Zenodo deposition with prereserve_doi=true),
-    then provenance.yaml includes the reserved DOI, THEN local commit (publication),
-    THEN files are uploaded and deposition is published (final DOI + record_id recorded).
-
-Flow:
-  1) Preflight: source repo clean; site repo (cwd) clean
-  2) Copy src.md -> prints/YYYY-MM-DD/<original-stem>/<src.md>
-  3) Render with render.py --all (must produce .pdf, .html, .pandoc.md)
-  4) Parse PNPMD (title/authors/date/summary/abstract/keywords, ORCIDs, reference DOIs)
-  5) Create Zenodo deposition; PUT metadata with prereserve_doi=true → get reserved DOI
-  6) Build provenance.yaml including reserved DOI
-  7) Single confirmation (or --yes)
-  8) Commit (publication) and optional push
-  9) Upload files to existing deposition; (optional) set community; publish
- 10) Update provenance.yaml with final DOI + record_id; second commit; optional push
-
-Env:
-  ZENODO_TOKEN (prod) or ZENODO_SANDBOX_TOKEN (--sandbox)
-  ZENODO_API (optional override)
-
-Requires:
-  - git, requests, docker (used by render.py), pandoc/extra image
-  - render.py in same folder or on PATH
+Fix: normalize PNPMD date -> ISO 'YYYY-MM-DD' for Zenodo.
 """
 
 import argparse, json, os, re, shutil, subprocess, sys
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
+from datetime import date, datetime
 
 # ---------------- util: stdout-only, echo every command ----------------
 
@@ -123,12 +100,6 @@ def normalize_orcid(s: str) -> Optional[str]:
     return f"https://orcid.org/{s}"
 
 def parse_pnpmd(md_text: str) -> Dict:
-    """
-    Parse PNPMD fields:
-      - header: % Title / % Author(s) / % Date
-      - sections: One-Sentence Summary, Abstract, Keywords, About Author(s)
-      - scan all text for ORCID URLs/IDs and DOIs (references)
-    """
     lines = md_text.splitlines()
     head = []
     for i in range(min(3, len(lines))):
@@ -204,6 +175,56 @@ def parse_pnpmd(md_text: str) -> Dict:
         "scanned_orcids": found_orcids,
         "reference_doi_urls": doi_urls
     }
+
+# ---- date normalization ----
+
+MONTHS = {
+    m.lower(): i for i, m in enumerate(
+        ["January","February","March","April","May","June","July","August","September","October","November","December"], 1
+    )
+}
+def _try_parse_date(s: str) -> Optional[datetime]:
+    s = s.strip()
+    fmts = [
+        "%Y-%m-%d", "%Y/%m/%d",
+        "%Y-%m", "%Y/%m",
+        "%Y",
+        "%B %Y",        # October 2025
+        "%b %Y",        # Oct 2025
+        "%B %d, %Y",    # October 3, 2025
+        "%b %d, %Y",    # Oct 3, 2025
+        "%d %B %Y",     # 3 October 2025
+        "%d %b %Y",     # 3 Oct 2025
+    ]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            pass
+    # Free-form: "October 2025" with extra spaces, etc.
+    m = re.match(r'^\s*([A-Za-z]+)\s+(\d{4})\s*$', s)
+    if m:
+        mon = MONTHS.get(m.group(1).lower())
+        yr  = int(m.group(2))
+        if mon:
+            return datetime(yr, mon, 1)
+    return None
+
+def normalize_pub_date(pnpmd_date: Optional[str], folder_date: str) -> str:
+    # Prefer PNPMD header if parseable; else use folder date; else today's date
+    cand = (pnpmd_date or "").strip()
+    if cand:
+        dt = _try_parse_date(cand)
+        if dt:
+            # If only year/month given, ensure day exists
+            day = dt.day if dt.day != 0 else 1
+            return f"{dt.year:04d}-{dt.month:02d}-{day:02d}"
+    # Folder date should already be ISO (prints/YYYY-MM-DD)
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", folder_date):
+        return folder_date
+    # Fallback to today
+    t = date.today()
+    return t.strftime("%Y-%m-%d")
 
 # Minimal YAML writer (no external dependency)
 def to_yaml(obj, indent=0):
@@ -288,7 +309,6 @@ def main():
     if args.date:
         date_str = args.date
     else:
-        from datetime import date
         date_str = date.today().isoformat()
     original_stem = src_md.stem  # exact stem, no slugging
     dst_dir = site_repo / "prints" / date_str / original_stem
@@ -330,22 +350,22 @@ def main():
     abstract = parsed["abstract"]
     keywords = parsed["keywords"]
     ref_dois = parsed["reference_doi_urls"]
-    pub_date_from_header = parsed["date"].strip() if parsed["date"] else None
-    publication_date = pub_date_from_header or date_str  # prefer PNPMD date
+    pnpmd_date_raw = parsed["date"].strip() if parsed["date"] else ""
+    publication_date = normalize_pub_date(pnpmd_date_raw, date_str)  # <-- ISO fix
 
-    # Zenodo metadata (for reservation)
+    # Zenodo metadata (reservation)
     related_identifiers = [{"relation": "references",
                             "identifier": d,
                             "resource_type": "publication"} for d in ref_dois]
     zenodo_meta = {
         "upload_type": "publication",
-        "publication_type": "article",  # FIXED
+        "publication_type": "article",
         "title": title,
         "creators": creators or [{"name": "Unknown"}],
         "description": abstract or "No description provided.",
         "keywords": keywords or [],
         "journal_title": args.journal,
-        "publication_date": publication_date,
+        "publication_date": publication_date,      # <-- ISO guaranteed
         "license": args.license,
         "prereserve_doi": True
     }
@@ -354,21 +374,19 @@ def main():
 
     api, token = zenodo_api_and_token(args.sandbox)
 
-    # Create empty deposition, then PUT metadata (to get prereserve_doi)
+    # Create deposition, PUT metadata to reserve DOI
     dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
     dep_id = dep.get("id")
     if not dep_id:
         die("Could not create deposition (no id).")
-
     dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": zenodo_meta})
-    # Extract reserved DOI
     reserved_doi = None
     try:
         reserved_doi = (dep.get("metadata", {}).get("prereserve_doi", {}) or {}).get("doi")
     except Exception:
         reserved_doi = None
 
-    # Provenance (YAML) — include reserved DOI now
+    # Provenance (YAML) — include reserved DOI + both dates
     provenance = {
         "published_by_commit": True,
         "journal": args.journal,
@@ -393,7 +411,8 @@ def main():
         "parsed_from_pnpmd": {
             "title": title,
             "authors": creators,
-            "date": pub_date_from_header or "",
+            "date_raw": pnpmd_date_raw,                 # original PNPMD date
+            "date_normalized": publication_date,        # ISO used for Zenodo
             "one_sentence_summary": parsed["one_sentence"],
             "abstract": abstract,
             "keywords": keywords
@@ -411,11 +430,11 @@ def main():
     }
     prov_path = dst_dir / "provenance.yaml"
 
+    # Preview & confirm (or --yes)
     zenodo_meta_preview = dict(zenodo_meta)
     if args.community:
         zenodo_meta_preview["communities"] = [{"identifier": args.community}]
 
-    # Confirmation (can skip with --yes)
     echo("\n--- PROVENANCE (YAML to be written) ---")
     echo(to_yaml(provenance))
     echo("\n--- ZENODO METADATA (reserved DOI phase) ---")
@@ -433,7 +452,7 @@ def main():
         if ans not in ("y","yes"):
             die("Aborted by user.", 0)
 
-    # Write provenance.yaml and publication commit (this IS publication)
+    # Commit = publication
     echo(f"+ write {prov_path}")
     prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
     run(["git", "add", "-A"], cwd=site_repo)
@@ -442,7 +461,7 @@ def main():
     if args.push:
         run(["git", "push"], cwd=site_repo)
 
-    # Upload files to existing deposition; set community; publish
+    # Upload files and publish
     for path in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
         with open(path, "rb") as fh:
             http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
@@ -456,7 +475,7 @@ def main():
     final_doi = (published.get("doi") or (published.get("metadata") or {}).get("doi"))
     record_id = published.get("record_id")
 
-    # Update provenance.yaml with final DOI + record_id; second commit
+    # Write back final DOI
     provenance["zenodo"]["doi"] = final_doi
     provenance["zenodo"]["record_id"] = record_id
     echo(f"+ update {prov_path} with final DOI/record_id")
