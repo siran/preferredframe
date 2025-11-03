@@ -3,3 +3,4 @@ site
 *.code-workspace
 .env
 venv
+gpt5push.sh
