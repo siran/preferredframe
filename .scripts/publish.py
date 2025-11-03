@@ -498,11 +498,14 @@ def main():
     echo("\n--- RESERVED DOI ---")
     echo(reserved_doi or "(unavailable)")
     echo("\n--- FILES TO COMMIT (publication) ---")
-    for p in [dst_md, dst_pdf, dst_html, dst_pandoc_md, prov_path]:
+    for p in [dst_md, dst_html, dst_pandoc_md]:  # PDF excluded from commit
         echo(f" - {p.relative_to(site_repo)}")
+    echo(f" - {prov_path.relative_to(site_repo)}")
+
     echo("\n--- FILES TO UPLOAD TO ZENODO ---")
-    for p in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
+    for p in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:  # PDF still uploaded
         echo(f" - {p.name}")
+
 
     if not args.yes:
         ans = input("\nProceed with publication commit and DOI minting? [y/N]: ").strip().lower()
@@ -511,11 +514,18 @@ def main():
     # Commit = publication
     echo(f"+ write {prov_path}")
     prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
-    run(["git", "add", "-A"], cwd=site_repo)
+
+    # Stage only what we want (no PDF):
+    run(["git", "add", str(dst_md)], cwd=site_repo)
+    run(["git", "add", str(dst_html)], cwd=site_repo)
+    run(["git", "add", str(dst_pandoc_md)], cwd=site_repo)
+    run(["git", "add", str(prov_path)], cwd=site_repo)
+
     run(["git", "commit", "-m",
-         f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{stem}'"], cwd=site_repo)
+        f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{stem}'"], cwd=site_repo)
     if args.push:
         run(["git", "push", "--set-upstream", "origin", branch_name], cwd=site_repo)
+
 
     # Upload & publish
     for path in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
