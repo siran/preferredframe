@@ -564,7 +564,7 @@ def main():
             cleanup_local()
             die("Aborted: no DOI minted; draft deleted and local state cleaned.", 1)
         else:
-            choice = input("Delete Zenodo draft and clean local branch/folder? [y/N]: ").strip().lower()
+            choice = input("Publish failed (no DOI). Delete Zenodo draft and clean local branch/folder? [y/N]: ").strip().lower()
             if choice in ("y", "yes"):
                 delete_deposition()
                 cleanup_local()
@@ -572,7 +572,7 @@ def main():
             else:
                 die("Aborted: no DOI minted; leaving draft and local branch as-is.", 1)
 
-    # ---- success path: permalink, write-back, commit, optional merge ----
+    # ---- success path: permalink, write-back, commit ----
     permalink = f"https://preferredframe.com/q/{re.sub(r'[^a-z0-9]+','-', title.lower()).strip('-')}--{final_doi.split('/')[-1]}"
     provenance["site"]["permalink"] = permalink
 
@@ -582,26 +582,31 @@ def main():
     prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
     run(["git", "add", str(prov_path)], cwd=site_repo)
     run(["git", "commit", "-m", f"Record DOI for {title}: {final_doi}"], cwd=site_repo)
-    if args.push:
-        run(["git", "push"], cwd=site_repo)
 
-    # Optional merge to main
-    if args.merge_on_success:
+    # --- prompt to push the branch ---
+    do_push = input("Push branch to origin now? [y/N]: ").strip().lower() in ("y","yes")
+    if do_push:
+        run(["git", "push", "--set-upstream", "origin", branch_name], cwd=site_repo)
+
+    # --- prompt to merge into main ---
+    do_merge = input(f"Merge '{branch_name}' into '{args.main}' and push? [y/N]: ").strip().lower() in ("y","yes")
+    if do_merge:
         echo(f"+ git checkout {args.main}")
         run(["git", "checkout", args.main], cwd=site_repo)
         echo(f"+ git merge --no-ff {branch_name}")
         run(["git", "merge", "--no-ff", branch_name], cwd=site_repo)
-        if args.push:
+        if do_push:
             run(["git", "push"], cwd=site_repo)
         echo(f"+ git branch -d {branch_name}")
         run(["git", "branch", "-d", branch_name], cwd=site_repo)
 
     echo(f"\n✅ Publication committed and DOI minted"
-         f"\nConcept DOI: {concept_doi}"
-         f"\nVersion DOI: {final_doi}"
-         f"\nRecord ID: {record_id}"
-         f"\nPermalink: {permalink}"
-         f"\nFolder: {dst_dir}")
+        f"\nConcept DOI: {concept_doi}"
+        f"\nVersion DOI: {final_doi}"
+        f"\nRecord ID: {record_id}"
+        f"\nPermalink: {permalink}"
+        f"\nFolder: {dst_dir}")
+
 
 if __name__ == "__main__":
     try:

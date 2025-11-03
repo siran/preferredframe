@@ -13,7 +13,8 @@ EXCLUDE_NAMES = {
     "__pycache__", ".mypy_cache",".pytest_cache",".ruff_cache",".cache",
     "Makefile","index.html"
 }
-MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
+MIRROR_EXTS = {".html",".pdf",".md",".pandoc.md",".yaml",".yml"}
+
 
 # ---------- repo autodetect ----------
 def _parse_remote(url: str):
@@ -282,8 +283,8 @@ def build_article_pages():
         # links row
         links = []
         if local_html: links.append(f'<a href="{local_html}">HTML</a>')
-        # PDF: link DOI landing page (Zenodo serves the canonical PDF)
-        if doi_url:    links.append(f'<a href="{doi_url}">PDF</a>')
+        if local_pdf:  links.append(f'<a href="{local_pdf}">PDF</a>')           # direct file
+        elif doi_url:  links.append(f'<a href="{doi_url}">PDF</a>')              # fallback to DOI
         if local_md:   links.append(f'<a href="{local_md}">Markdown</a>')
         if local_pmd:  links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
         if z_rec and z_rec != doi_url:  links.append(f'<a href="{z_rec}">Zenodo</a>')
@@ -336,7 +337,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
             p_rel = rel(it.path)
             view = None
             mirrored = OUT / p_rel
-            if mirrored.exists() and it.path.suffix.lower() in {".html",".md",".yaml",".yml"}:
+            if mirrored.exists() and it.path.suffix.lower() in {".html",".pdf",".md",".yaml",".yml"}:
                 view = "/" + mirrored.relative_to(OUT).as_posix()
             lines.append(f"- 📄 {it.name}")
             if view:
