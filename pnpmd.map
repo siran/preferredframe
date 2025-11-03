@@ -1,0 +1,80 @@
+# PNPMD map (UTF-8). NOTE: keep literal U+00A0 on the LHS below; do NOT replace with a normal space.
+
+# =======================================
+# STRIP: ASCII control chars that break pdfLaTeX
+# (keep TAB \x09, LF \x0A, CR \x0D)
+/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]=
+
+# =======================================
+# WHITESPACE
+# U+00A0 NO-BREAK SPACE → TeX nonbreak (~)
+ =~   # ← LHS is a literal NBSP (U+00A0)
+
+# =======================================
+# PUNCTUATION NORMALIZATION (Unicode → ASCII-safe)
+#“="
+#”="
+#„="
+#‟="
+#‘='
+#’='
+#‚='
+#‛='
+#–=--
+#—=---
+#−=-
+#…=...
+#•=-
+#·=-
+#©=(c)
+#™=(TM)
+#®=(R)
+
+# =======================================
+# COMMON MATH SYMBOLS (Unicode → TeX macros, safe for pdflatex)
+≤=\leq
+≥=\geq
+≠=\neq
+≈=\approx
+∼=\sim
+∞=\infty
+×=\times
+⋅=\cdot
+→=\to
+←=\leftarrow
+↔=\leftrightarrow
+⇔=\Leftrightarrow
+⇒=\Rightarrow
+√=\sqrt
+
+# =======================================
+# SETS / BLACKBOARD BOLD
+ℝ=\mathbb{R}
+ℤ=\mathbb{Z}
+ℕ=\mathbb{N}
+ℚ=\mathbb{Q}
+ℂ=\mathbb{C}
+
+# =======================================
+# GREEK (text glyphs → TeX math macros)
+α=\alpha
+β=\beta
+γ=\gamma
+δ=\delta
+ε=\varepsilon
+θ=\theta
+λ=\lambda
+μ=\mu
+π=\pi
+φ=\varphi
+ψ=\psi
+ω=\omega
+Γ=\Gamma
+Δ=\Delta
+Θ=\Theta
+Λ=\Lambda
+Π=\Pi
+Φ=\Phi
+Ψ=\Psi
+Ω=\Omega
+χ=\chi
