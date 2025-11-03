@@ -1,0 +1,47 @@
+published_by_commit: true
+journal: Preferred Frame
+site_repo: /home/an/src/siran/preferredframe
+site_repo_head: cc3a10bd338131308cf433451076db7a1065077b
+source:
+  md_path: "/home/an/src/siran/research/_proposals/The PNP Markdown Standard - PNPMDv1/The PNP Markdown Standard - PNPMDv1.md"
+  repo: /home/an/src/siran/research
+  origin: "git@github.com:siran/research.git"
+  commit: 8de9b1f2bafaffc48580cac85918506d63369158
+copied_to: "/home/an/src/siran/preferredframe/prints/2025-11-03/The PNP Markdown Standard - PNPMDv1/The PNP Markdown Standard - PNPMDv1.md"
+date_folder: "2025-11-03"
+artifacts:
+  main: "The PNP Markdown Standard - PNPMDv1.md"
+  additional:
+    pdf: "The PNP Markdown Standard - PNPMDv1.pdf"
+    html: "The PNP Markdown Standard - PNPMDv1.html"
+    pandoc_md: "The PNP Markdown Standard - PNPMDv1.pandoc.md"
+parsed_from_pnpmd:
+  title: PNPMD Markdown specification — PNPMD v1.0.4
+  authors:
+    -       name: Max Freet
+    -       name: An M. Rodriguez
+    -       name: Adrien Hale
+  date_raw: "November 2, 2025"
+  date_normalized: "2025-11-02"
+  one_sentence_summary: "PNPMD is a specification for human-readable-*first*, plain-text, math-aware, markdown documents."
+  abstract: "PNPMD is a specification for human-readable-*first*, plain-text, math-aware documents. PNPMD honors Pandoc's flavored markdown, rendered with pdflatex. Uses Pandoc's crossref filter (giving numbered and referenceable equations, figures, tables, etc), and adds some syntax sugar to ease cross-referencing and citations."
+  keywords:
+    - "plain-text"
+    - research format
+    - markdown
+    - mathjax
+    - pandoc
+    - PNPMD
+scanned:
+  authors_orcid:
+    - "https://orcid.org/0009-0009-9098-9468"
+  references_doi:
+[]
+site:
+  html_canonical: "https://preferredframe.com/prints/2025-11-03/The PNP Markdown Standard - PNPMDv1/The PNP Markdown Standard - PNPMDv1.html"
+zenodo:
+  deposition_id: 396614
+  reserved_doi: 10.5281/zenodo.396614
+  concept_doi: null
+  doi: null
+  record_id: null
