@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Preferred Frame publisher (PNPMD-driven, commit = publication; DOI afterward)
+Preferred Frame publisher (PNPMD-driven, commit = publication; DOI reserved first, then minted)
 
-Rules:
-  - No interactive prompts for metadata. All comes from the PNPMD .md.
-  - Provenance saved as YAML.
-  - Publication happens at the local commit in preferredframe repo.
-  - DOI is minted after publication via Zenodo.
+Changes in this version:
+  - publication_type fixed to "article"
+  - DOI is reserved FIRST (Zenodo deposition with prereserve_doi=true),
+    then provenance.yaml includes the reserved DOI, THEN local commit (publication),
+    THEN files are uploaded and deposition is published (final DOI + record_id recorded).
 
 Flow:
   1) Preflight: source repo clean; site repo (cwd) clean
   2) Copy src.md -> prints/YYYY-MM-DD/<original-stem>/<src.md>
   3) Render with render.py --all (must produce .pdf, .html, .pandoc.md)
-  4) Parse PNPMD: title, authors, date, one-sentence summary, abstract, keywords
-     + scan ORCIDs (About Author(s) and anywhere), scan DOIs (anywhere)
-  5) Build provenance.yaml (source MD provenance only)
-  6) Single confirmation (or --yes)
-  7) Commit (publication) and optional push
-  8) Zenodo: create deposition -> upload -> (optional community) -> publish (mint DOI)
-  9) Update provenance.yaml with DOI/record_id; commit; optional push
+  4) Parse PNPMD (title/authors/date/summary/abstract/keywords, ORCIDs, reference DOIs)
+  5) Create Zenodo deposition; PUT metadata with prereserve_doi=true → get reserved DOI
+  6) Build provenance.yaml including reserved DOI
+  7) Single confirmation (or --yes)
+  8) Commit (publication) and optional push
+  9) Upload files to existing deposition; (optional) set community; publish
+ 10) Update provenance.yaml with final DOI + record_id; second commit; optional push
 
 Env:
   ZENODO_TOKEN (prod) or ZENODO_SANDBOX_TOKEN (--sandbox)
@@ -125,13 +125,11 @@ def normalize_orcid(s: str) -> Optional[str]:
 def parse_pnpmd(md_text: str) -> Dict:
     """
     Parse PNPMD fields:
-      - header: % Title / % Author(s) / % Date (first 3 lines starting with %)
-      - sections: One-Sentence Summary, Abstract, Keywords
-      - About Author(s): lines starting with '*' capture names and ORCIDs/emails
+      - header: % Title / % Author(s) / % Date
+      - sections: One-Sentence Summary, Abstract, Keywords, About Author(s)
       - scan all text for ORCID URLs/IDs and DOIs (references)
     """
     lines = md_text.splitlines()
-    # Header (% lines)
     head = []
     for i in range(min(3, len(lines))):
         if lines[i].lstrip().startswith("%"):
@@ -142,19 +140,16 @@ def parse_pnpmd(md_text: str) -> Dict:
     raw_authors_line = head[1] if len(head) >= 2 else ""
     pub_date = head[2] if len(head) >= 3 else ""
 
-    # Basic authors from header line (split on 'and' or commas)
     header_authors = []
     if raw_authors_line:
         parts = re.split(r'\band\b|,', raw_authors_line)
         header_authors = [p.strip() for p in parts if p.strip()]
 
-    # Extract sections by headings (## Section)
     def section_text(name: str) -> str:
         pat = re.compile(rf'^\s*##\s+{re.escape(name)}\s*$', re.I | re.M)
         m = pat.search(md_text)
         if not m: return ""
         start = m.end()
-        # find next section
         m2 = re.search(r'^\s*##\s+.+?$', md_text[start:], re.M)
         end = start + (m2.start() if m2 else len(md_text) - start)
         return md_text[start:end].strip()
@@ -163,22 +158,18 @@ def parse_pnpmd(md_text: str) -> Dict:
     abstract = section_text("Abstract").strip()
     keywords_block = section_text("Keywords").strip()
 
-    # Keywords: comma-separated in the section body
     keywords = []
     if keywords_block:
-        # take first non-empty line and split by comma
         first_line = next((ln.strip() for ln in keywords_block.splitlines() if ln.strip()), "")
         if first_line:
             keywords = [k.strip() for k in first_line.split(",") if k.strip()]
 
-    # About Author(s): capture name + optional ORCID and email from bullet lines
     about = section_text("About Author(s)")
-    parsed_authors = []  # [{"name":..., "orcid":..., "email":...}, ...]
+    parsed_authors = []
     for ln in about.splitlines():
         m = re.match(r'^\s*[\*\-]\s+(.*)$', ln)
         if not m: continue
         body = m.group(1).strip()
-        # split by commas, allow around
         parts = [p.strip() for p in body.split(",")]
         name = parts[0] if parts else ""
         orcid = None
@@ -195,11 +186,9 @@ def parse_pnpmd(md_text: str) -> Dict:
             if email: entry["email"] = email
             parsed_authors.append(entry)
 
-    # If About Author(s) missing, fallback to header authors (without orcid/email)
     if not parsed_authors and header_authors:
         parsed_authors = [{"name": nm} for nm in header_authors]
 
-    # Global scans
     found_orcids = sorted({normalize_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(md_text)} |
                           {normalize_orcid(m.group(1)) for m in ORCID_ID_RE.finditer(md_text)} - {None})
     dois = set(DOI_RE.findall(md_text))
@@ -207,7 +196,7 @@ def parse_pnpmd(md_text: str) -> Dict:
 
     return {
         "title": title,
-        "authors": parsed_authors,  # list of dicts (name, maybe orcid/email)
+        "authors": parsed_authors,
         "date": pub_date,
         "one_sentence": one_sentence,
         "abstract": abstract,
@@ -259,7 +248,7 @@ def to_yaml(obj, indent=0):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Publish a Preferred Frame print (commit = publish; DOI afterward; PNPMD-driven)."
+        description="Publish a Preferred Frame print (commit = publish; DOI reserved first; PNPMD-driven)."
     )
     ap.add_argument("md_path", help="Path to the source .md (must be inside a git repo).")
     ap.add_argument("--date", help="YYYY-MM-DD folder under prints/. Defaults to today.")
@@ -327,7 +316,7 @@ def main():
     if not dst_pandoc_md.exists():
         die(f"Expected pandoc-preprocessed MD missing: {dst_pandoc_md}")
 
-    # Parse PNPMD (from source md we just copied)
+    # Parse PNPMD
     md_text = dst_md.read_text(encoding="utf-8")
     parsed = parse_pnpmd(md_text)
 
@@ -338,15 +327,48 @@ def main():
         if "orcid" in a and a["orcid"]:
             c["orcid"] = a["orcid"]
         creators.append(c)
-    # If no authors parsed at all, keep empty (Zenodo will accept but better have names)
     abstract = parsed["abstract"]
     keywords = parsed["keywords"]
-    scanned_orcids = parsed["scanned_orcids"]
     ref_dois = parsed["reference_doi_urls"]
     pub_date_from_header = parsed["date"].strip() if parsed["date"] else None
-    publication_date = pub_date_from_header or date_str  # prefer PNPMD header, else folder date
+    publication_date = pub_date_from_header or date_str  # prefer PNPMD date
 
-    # Provenance (YAML)
+    # Zenodo metadata (for reservation)
+    related_identifiers = [{"relation": "references",
+                            "identifier": d,
+                            "resource_type": "publication"} for d in ref_dois]
+    zenodo_meta = {
+        "upload_type": "publication",
+        "publication_type": "article",  # FIXED
+        "title": title,
+        "creators": creators or [{"name": "Unknown"}],
+        "description": abstract or "No description provided.",
+        "keywords": keywords or [],
+        "journal_title": args.journal,
+        "publication_date": publication_date,
+        "license": args.license,
+        "prereserve_doi": True
+    }
+    if related_identifiers:
+        zenodo_meta["related_identifiers"] = related_identifiers
+
+    api, token = zenodo_api_and_token(args.sandbox)
+
+    # Create empty deposition, then PUT metadata (to get prereserve_doi)
+    dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
+    dep_id = dep.get("id")
+    if not dep_id:
+        die("Could not create deposition (no id).")
+
+    dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": zenodo_meta})
+    # Extract reserved DOI
+    reserved_doi = None
+    try:
+        reserved_doi = (dep.get("metadata", {}).get("prereserve_doi", {}) or {}).get("doi")
+    except Exception:
+        reserved_doi = None
+
+    # Provenance (YAML) — include reserved DOI now
     provenance = {
         "published_by_commit": True,
         "journal": args.journal,
@@ -377,30 +399,17 @@ def main():
             "keywords": keywords
         },
         "scanned": {
-            "authors_orcid": scanned_orcids,
+            "authors_orcid": parsed["scanned_orcids"],
             "references_doi": ref_dois
         },
-        "zenodo": {"doi": None, "record_id": None}
+        "zenodo": {
+            "deposition_id": dep_id,
+            "reserved_doi": reserved_doi,
+            "doi": None,
+            "record_id": None
+        }
     }
     prov_path = dst_dir / "provenance.yaml"
-
-    # Zenodo metadata
-    related_identifiers = [{"relation": "references",
-                            "identifier": d,
-                            "resource_type": "publication"} for d in ref_dois]
-    zenodo_meta = {
-        "upload_type": "publication",
-        "publication_type": "journal-article",
-        "title": title,
-        "creators": creators or [{"name": "Unknown"}],
-        "description": abstract or "No description provided.",
-        "keywords": keywords or [],
-        "journal_title": args.journal,
-        "publication_date": publication_date,
-        "license": args.license
-    }
-    if related_identifiers:
-        zenodo_meta["related_identifiers"] = related_identifiers
 
     zenodo_meta_preview = dict(zenodo_meta)
     if args.community:
@@ -409,8 +418,9 @@ def main():
     # Confirmation (can skip with --yes)
     echo("\n--- PROVENANCE (YAML to be written) ---")
     echo(to_yaml(provenance))
-    echo("\n--- ZENODO METADATA (to be sent) ---")
+    echo("\n--- ZENODO METADATA (reserved DOI phase) ---")
     echo(json.dumps(zenodo_meta_preview, indent=2))
+    echo(f"\n--- RESERVED DOI ---\n{reserved_doi or '(unavailable)'}")
     echo("\n--- FILES TO COMMIT (publication) ---")
     for p in [dst_md, dst_pdf, dst_html, dst_pandoc_md, prov_path]:
         echo(f" - {p.relative_to(site_repo)}")
@@ -423,7 +433,7 @@ def main():
         if ans not in ("y","yes"):
             die("Aborted by user.", 0)
 
-    # Write provenance.yaml and publication commit
+    # Write provenance.yaml and publication commit (this IS publication)
     echo(f"+ write {prov_path}")
     prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
     run(["git", "add", "-A"], cwd=site_repo)
@@ -432,15 +442,7 @@ def main():
     if args.push:
         run(["git", "push"], cwd=site_repo)
 
-    # Zenodo deposition -> upload -> publish
-    api, token = zenodo_api_and_token(args.sandbox)
-
-    dep = http_json("POST", f"{api}/deposit/depositions", token, data={"metadata": zenodo_meta})
-    dep_id = dep.get("id")
-    if not dep_id:
-        die("Could not create deposition (no id).")
-
-    # Upload files (NOT uploading provenance.yaml)
+    # Upload files to existing deposition; set community; publish
     for path in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
         with open(path, "rb") as fh:
             http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
@@ -451,20 +453,20 @@ def main():
                   data={"metadata": {"communities": [{"identifier": args.community}]}})
 
     published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
-    doi = (published.get("doi") or (published.get("metadata") or {}).get("doi"))
+    final_doi = (published.get("doi") or (published.get("metadata") or {}).get("doi"))
     record_id = published.get("record_id")
 
-    # Update provenance.yaml with DOI; second commit
-    provenance["zenodo"]["doi"] = doi
+    # Update provenance.yaml with final DOI + record_id; second commit
+    provenance["zenodo"]["doi"] = final_doi
     provenance["zenodo"]["record_id"] = record_id
-    echo(f"+ update {prov_path} with DOI/record_id")
+    echo(f"+ update {prov_path} with final DOI/record_id")
     prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
     run(["git", "add", str(prov_path)], cwd=site_repo)
-    run(["git", "commit", "-m", f"Record DOI for {title}: {doi}"], cwd=site_repo)
+    run(["git", "commit", "-m", f"Record DOI for {title}: {final_doi}"], cwd=site_repo)
     if args.push:
         run(["git", "push"], cwd=site_repo)
 
-    echo(f"\n✅ Publication committed and DOI minted\nDOI: {doi}\nRecord ID: {record_id}\nFolder: {dst_dir}")
+    echo(f"\n✅ Publication committed and DOI minted\nReserved DOI: {reserved_doi}\nFinal DOI: {final_doi}\nRecord ID: {record_id}\nFolder: {dst_dir}")
 
 if __name__ == "__main__":
     try:
