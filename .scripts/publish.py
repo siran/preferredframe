@@ -69,6 +69,21 @@ def git_origin_url(repo: Path) -> str:
     out = run(["git", "config", "--get", "remote.origin.url"], cwd=repo)
     return out.strip()
 
+# --- safe git ref/branch slug ---
+def slug_branch(s: str) -> str:
+    s = s.lower()
+    # replace anything not [a-z0-9._-] with '-'
+    s = re.sub(r'[^a-z0-9._-]+', '-', s)
+    # collapse runs of '-' and trim
+    s = re.sub(r'-{2,}', '-', s).strip('-')
+    # avoid edge cases: no leading '.' or '-', no trailing '.lock'
+    s = s.lstrip('.-')
+    if s.endswith('.lock'):
+        s = s[:-5] + '-lock'
+    # keep it reasonable
+    return s[:80] or 'x'
+
+
 # ---------------- env / http ----------------
 
 def zenodo_api_and_token(use_sandbox: bool=False) -> Tuple[str, str]:
@@ -328,7 +343,7 @@ def main():
 
     # Create work branch
     src8 = src_commit[:8]
-    branch_name = args.branch or f"publish/{date_str}-{stem}-{src8}"
+    branch_name = args.branch or f"publish/{date_str}-{slug_branch(stem)}-{src8}"
     echo(f"+ git checkout -b {branch_name}")
     run(["git", "checkout", "-b", branch_name], cwd=site_repo)
 
