@@ -312,7 +312,7 @@ def load_yaml_quick(path: Path) -> Dict:
 # ---------------- steps ----------------
 
 def prepare_paths_and_branch(src_md: Path, site_repo: Path, src_commit: str) -> Tuple[Path, Path, Path, str, str]:
-    date_str = date.today().isoformat()
+    date_str = date.today().strftime("%Y-%m")
     stem = src_md.stem
     branch_name = f"publish/{date_str}-{slug_branch(stem)}-{src_commit[:8]}"
     echo(f"+ git checkout -b {branch_name}")
