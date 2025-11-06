@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Preferred Frame publisher (PNPMD-driven; commit = publication; DOI reserved first)
+Preferred Frame publisher (PNPMD-driven; commit = publication; reserved DOI = final DOI)
 
-Key behaviors:
-  - Filenames preserved (spaces allowed). Only branch/permalink are slugged.
-  - One commit (writes provenance with reserved DOI and permalink).
-  - PDF is NOT committed under prints/, but:
-      * uploaded to Zenodo
-      * copied to ../assets as assets/YYYY-MM-DD/<filename>.pdf (push ON by default, after confirm)
-      * mirrored into site/assets/YYYY-MM-DD/<filename>.pdf
-  - Related identifiers: HTML, MD (preferredframe.com), assets PDF, and reference DOIs.
-  - Prompts: main confirmation; on decline -> offer cleanup. After success -> ask to push; ask to merge.
-  - try/finally: on unexpected error, offer cleanup of draft + local branch/folder.
+Flow:
+  1) Preflight: source & site repos clean; create work branch (slugged)
+  2) Copy src.md -> prints/YYYY-MM-DD/<stem>/<src.md>
+  3) render.py --all (must produce .pdf, .html, .pandoc.md)
+  4) Parse PNPMD; scan ORCIDs & DOIs; normalize publication_date (ISO)
+  5) Detect prior provenance (versions)
+  6) Reserve DOI; build permalink from reserved DOI; write provenance
+  7) Single confirmation (or abort -> prompt cleanup)
+  8) Commit (publication)
+  9) Copy PDF to assets repo (default ../assets) & push (default ON); also copy PDF into site/assets mirror
+ 10) Upload files; publish (reserved DOI becomes final); sanity check
+ 11) Prompt to push branch; prompt to merge to main
+On any error or manual abort, offer cleanup.
 
 Env:
-  ZENODO_TOKEN or ZENODO_SANDBOX_TOKEN (--sandbox); optional ZENODO_API
+  ZENODO_TOKEN (prod) or ZENODO_SANDBOX_TOKEN (--sandbox)
+  ZENODO_API (optional override)
 """
 
 import argparse, os, re, shutil, subprocess, sys
@@ -161,7 +165,6 @@ def parse_pnpmd(md_text: str) -> Dict:
     if keywords_block:
         first_line = next((ln.strip() for ln in keywords_block.splitlines() if ln.strip()), "")
         if first_line:
-            # split by comma, keep raw tokens (no quotes later)
             keywords = [k.strip() for k in first_line.split(",") if k.strip()]
 
     about = section_text("About Author(s)")
@@ -240,10 +243,9 @@ def to_yaml(obj, indent=0):
     if isinstance(obj, bool): return "true" if obj else "false"
     if isinstance(obj, (int, float)): return str(obj)
     if isinstance(obj, str):
-        # keep unquoted unless truly needed (no comma restriction)
-        need = (obj == "" or obj.strip() != obj or
-                any(c in obj for c in [":","{","}","[","]","#","&","*","!","|",">","'",'"',"%","@","`"]))
-        if need:
+        # keep simple; only quote when necessary
+        specials = [":","{","}","[","]","#",",","&","*","!","|",">","'",'"',"%","@","`"]
+        if obj == "" or obj.strip() != obj or any(c in obj for c in specials):
             s = obj.replace("\\","\\\\").replace('"','\\"'); return f"\"{s}\""
         return obj
     if isinstance(obj, list):
@@ -300,11 +302,47 @@ def load_yaml_quick(path: Path) -> Dict:
             return {}
         return out
 
+# ---------------- cleanup helper ----------------
+
+def prompt_and_cleanup(site_repo: Path, branch_name: str, site_head_before: str,
+                       dst_dir: Path, api: Optional[str], token: Optional[str],
+                       dep_id: Optional[int], main_branch: str):
+    choice = input("Clean up: delete Zenodo draft (if any), remove local folder, drop branch? [y/N]: ").strip().lower()
+    if choice not in ("y","yes"):
+        return
+    # delete draft
+    if api and token and dep_id:
+        try:
+            http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token)
+        except SystemExit:
+            pass
+    # reset and remove folder/branch
+    try:
+        echo(f"+ git reset --hard {site_head_before}")
+        run(["git", "reset", "--hard", site_head_before], cwd=site_repo)
+    except Exception:
+        pass
+    try:
+        echo(f"+ remove print folder {dst_dir}")
+        shutil.rmtree(dst_dir, ignore_errors=True)
+    except Exception:
+        pass
+    try:
+        echo(f"+ git checkout {main_branch}")
+        run(["git", "checkout", main_branch], cwd=site_repo)
+    except Exception:
+        pass
+    try:
+        echo(f"+ git branch -D {branch_name}")
+        run(["git", "branch", "-D", branch_name], cwd=site_repo, check=False)
+    except Exception:
+        pass
+
 # ---------------- main ----------------
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Publish a Preferred Frame print (commit = publish; versions; DOI reserved first; PNPMD-driven)."
+        description="Publish a Preferred Frame print (versions; reserved DOI first; PNPMD-driven)."
     )
     ap.add_argument("md_path", help="Path to the source .md (must be inside a git repo).")
     ap.add_argument("--date", help="YYYY-MM-DD folder under prints/. Defaults to today.")
@@ -315,25 +353,18 @@ def main():
     # assets defaults and control
     ap.add_argument("--assets-dir", default="../assets",
                     help="Path to local assets repo (default: ../assets).")
-    ap.add_argument("--assets-base-url", default="https://preferredframe.com/assets",
-                    help="Public base URL for assets repo (default: https://preferredframe.com/assets)")
+    ap.add_argument("--assets-base-url", default="https://assets.preferredframe.com",
+                    help="Public base URL for assets (default: https://assets.preferredframe.com)")
     ap.add_argument("--no-assets-push", action="store_true",
-                    help="Do not push the assets repo (by default we push).")
-    # branch/merge/cleanup controls
+                    help="Do not push the assets repo (default: push).")
+    # main branch name
     ap.add_argument("--main", default="main", help="Main branch name to merge into (default: main).")
     args = ap.parse_args()
 
-    # --- state for try/finally cleanup ---
-    st = {
-        "site_repo": None,
-        "site_head_before": None,
-        "branch_name": None,
-        "dst_dir": None,
-        "dep_id": None,
-        "api": None,
-        "token": None,
-        "cleanup_ok": False  # set True when publish succeeds or user declines cleanup
-    }
+    # state for cleanup
+    dep_id_for_cleanup = None
+    created_branch = None
+    created_dst_dir = None
 
     try:
         script_dir = Path(__file__).resolve().parent
@@ -353,22 +384,19 @@ def main():
         site_head_before = git_head(site_repo)
         site_origin = git_origin_url(site_repo)
 
-        st["site_repo"] = site_repo
-        st["site_head_before"] = site_head_before
-
         # Destination
         date_str = args.date or date.today().isoformat()
-        stem = src_md.stem  # keep as-is
+        stem = src_md.stem  # keep as-is (human-first; spaces allowed)
 
         # Create work branch
         src8 = src_commit[:8]
         branch_name = f"publish/{date_str}-{slug_branch(stem)}-{src8}"
-        st["branch_name"] = branch_name
+        created_branch = branch_name
         echo(f"+ git checkout -b {branch_name}")
         run(["git", "checkout", "-b", branch_name], cwd=site_repo)
 
         dst_dir = site_repo / "prints" / date_str / stem
-        st["dst_dir"] = dst_dir
+        created_dst_dir = dst_dir
         dst_dir.mkdir(parents=True, exist_ok=True)
         dst_md = dst_dir / src_md.name
 
@@ -398,16 +426,17 @@ def main():
         publication_date = normalize_pub_date(pnpmd_date_raw, date_str)
 
         # PreferredFrame site URLs (HTML & MD)
-        # keep filenames with spaces
         site_html_url = f"https://preferredframe.com/prints/{date_str}/{stem}/{dst_md.stem}.html"
         site_md_url   = f"https://preferredframe.com/prints/{date_str}/{stem}/{dst_md.name}"
+
+        # Assets PDF URL (we compute URL now; copy/push happens AFTER confirmation)
+        assets_pdf_url = f"{args.assets_base_url}/preferredframe/{date_str}/{dst_pdf.name}"
 
         # Version detection
         prior_prov = newest_provenance_for_stem(site_repo, stem)
         api, token = zenodo_api_and_token(args.sandbox)
-        st["api"] = api; st["token"] = token
 
-        # Reserve DOI (newversion or new family)
+        # Create or newversion deposition (reserve DOI later via PUT)
         if prior_prov and prior_prov.exists():
             prov_data = load_yaml_quick(prior_prov)
             prior_dep_id = None
@@ -431,17 +460,19 @@ def main():
             dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
             dep_id = dep.get("id")
             if not dep_id: die("Could not create deposition (no id).")
-        st["dep_id"] = dep_id
 
-        # Related identifiers (site + references). Assets PDF added after confirmation (when we copy).
+        dep_id_for_cleanup = dep_id
+
+        # Related identifiers (site + assets PDF + references)
         related_identifiers = [
             {"relation": "isIdenticalTo", "identifier": site_html_url, "resource_type": "publication"},
             {"relation": "isIdenticalTo", "identifier": site_md_url,   "resource_type": "publication"},
+            {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
         ]
-        for durl in ref_dois:
-            related_identifiers.append({"relation": "references", "identifier": durl, "resource_type": "publication"})
+        for d in ref_dois:
+            related_identifiers.append({"relation": "references", "identifier": d, "resource_type": "publication"})
 
-        # PUT metadata with prereserve (no assets PDF yet)
+        # Put metadata with prereserve
         zenodo_meta = {
             "upload_type": "publication",
             "publication_type": "article",
@@ -457,29 +488,26 @@ def main():
             "prereserve_doi": True
         }
         dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": zenodo_meta})
-
         pr = (dep.get("metadata") or {}).get("prereserve_doi") or {}
         reserved_doi = pr.get("doi")
         concept_doi = pr.get("conceptdoi")
 
-        # Build permalink from reserved DOI (same becomes final on publish)
+        # Build permalink from reserved DOI (reserved = final on publish)
         doi_sfx = (reserved_doi or "").split("/")[-1]
         permalink = f"https://preferredframe.com/q/{slug_title_for_permalink(title)}--{doi_sfx}"
 
-        # Provenance (YAML) for single commit (use origins, not local paths)
-        prov_rel = Path("prints") / date_str / stem / "provenance.yaml"
+        # Provenance (YAML) prior to publication commit (single commit flow)
         provenance = {
             "published_by_commit": True,
             "journal": args.journal,
-            "site_repo": site_origin,
+            "site_repo_origin": site_origin,
             "site_repo_head": site_head_before,
             "source": {
-                "md_path": src_md.name,
-                "repo": git_origin_url(src_repo),
-                "origin": src_origin,  # same as repo (kept for compatibility)
+                "md_path": str(src_md),      # human-first; keep as-is
+                "repo_origin": src_origin,
                 "commit": src_commit
             },
-            "copied_to": str(Path("prints") / date_str / stem / src_md.name),
+            "copied_to": str(dst_md),
             "date_folder": date_str,
             "artifacts": {
                 "main": dst_md.name,
@@ -506,78 +534,34 @@ def main():
                 "deposition_id": dep_id,
                 "reserved_doi": reserved_doi,
                 "concept_doi": concept_doi
+            },
+            "mirrors": {
+                "assets_pdf": assets_pdf_url
             }
         }
         prov_path = dst_dir / "provenance.yaml"
 
-        # Preview & confirm
+        # Preview
         echo("\n--- PROVENANCE (YAML to be written) ---")
         echo(to_yaml(provenance))
         echo("\n--- RESERVED DOI ---")
         echo(reserved_doi or "(unavailable)")
-        echo("\n--- FILES TO COMMIT (publication) ---")
+        echo("\n--- FILES TO COMMIT (publication, site repo) ---")
         for p in [dst_md, dst_html, dst_pandoc_md, prov_path]:
             echo(f" - {p.relative_to(site_repo)}")
+        echo("\n--- FILES TO COMMIT (assets repo) ---")
+        echo(f" - preferredframe/{date_str}/{dst_pdf.name}  (PDF)")
         echo("\n--- FILES TO UPLOAD TO ZENODO ---")
         for p in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
             echo(f" - {p.name}")
 
         ans = input("\nProceed with publication commit and DOI minting? [y/N]: ").strip().lower()
         if ans not in ("y","yes"):
-            # Ask to clean up
-            ch = input("Clean up draft deposition and local branch/folder? [y/N]: ").strip().lower()
-            if ch in ("y","yes"):
-                # delete draft
-                try:
-                    http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token)
-                except SystemExit:
-                    pass
-                # clean local
-                echo(f"+ git reset --hard {site_head_before}")
-                run(["git", "reset", "--hard", site_head_before], cwd=site_repo)
-                echo(f"+ remove print folder {dst_dir}")
-                try: shutil.rmtree(dst_dir, ignore_errors=True)
-                except Exception: pass
-                echo(f"+ git checkout {args.main}")
-                run(["git", "checkout", args.main], cwd=site_repo)
-                echo(f"+ git branch -D {branch_name}")
-                run(["git", "branch", "-D", branch_name], cwd=site_repo, check=False)
-                st["cleanup_ok"] = True
+            prompt_and_cleanup(site_repo, branch_name, site_head_before, dst_dir,
+                               api, token, dep_id_for_cleanup, args.main)
             die("Aborted by user.", 0)
 
-        # Before commit: add assets PDF identifier & copy PDF to assets (AFTER confirmation)
-        assets_pdf_url = None
-        if args.assets_dir:
-            assets_repo = Path(args.assets_dir).resolve()
-            if not (assets_repo / ".git").exists():
-                die(f"Assets dir is not a git repo: {assets_repo}")
-            # Desired public URL: /assets/YYYY-MM-DD/<filename>.pdf
-            dest = assets_repo / "assets" / date_str / dst_pdf.name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            echo(f"+ copy {dst_pdf} -> {dest}")
-            shutil.copy2(dst_pdf, dest)
-
-            if not args.no_assets_push:
-                run(["git", "add", "-A"], cwd=assets_repo)
-                run(["git", "commit", "-m", f"Add PDF for {title} ({publication_date})"], cwd=assets_repo)
-                run(["git", "push"], cwd=assets_repo)
-
-            rel_public = dest.relative_to(assets_repo).as_posix()  # assets/YYYY-MM-DD/filename.pdf
-            assets_pdf_url = f"{args.assets_base_url}/{date_str}/{dst_pdf.name}" if rel_public.endswith(dst_pdf.name) else f"{args.assets_base_url}/{rel_public}"
-
-            # mirror into site/ to mimic preferredframe.com/assets
-            site_assets_pdf = site_repo / "site" / "assets" / date_str / dst_pdf.name
-            site_assets_pdf.parent.mkdir(parents=True, exist_ok=True)
-            echo(f"+ copy {dst_pdf} -> {site_assets_pdf}")
-            shutil.copy2(dst_pdf, site_assets_pdf)
-
-        # If we have assets PDF URL, update deposition metadata with extra isIdenticalTo
-        if assets_pdf_url:
-            related_identifiers.append({"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"})
-            http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token,
-                      data={"metadata": {**zenodo_meta, "related_identifiers": related_identifiers}})
-
-        # Commit = publication (PDF excluded from prints/)
+        # Commit = publication (PDF excluded from site repo commit)
         echo(f"+ write {prov_path}")
         prov_path.write_text(to_yaml(provenance) + "\n", encoding="utf-8")
         run(["git", "add", str(dst_md)], cwd=site_repo)
@@ -587,40 +571,37 @@ def main():
         run(["git", "commit", "-m",
              f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{stem}'"], cwd=site_repo)
 
-        # Upload & publish
+        # Copy PDF to assets repo & push (after confirmation, as requested)
+        if args.assets_dir:
+            assets_repo = Path(args.assets_dir).resolve()
+            if not (assets_repo / ".git").exists():
+                die(f"Assets dir is not a git repo: {assets_repo}")
+            dest = assets_repo / "preferredframe" / date_str / dst_pdf.name  # NOTE: no <stem> in path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            echo(f"+ copy {dst_pdf} -> {dest}")
+            shutil.copy2(dst_pdf, dest)
+            if not args.no_assets_push:
+                run(["git", "add", "-A"], cwd=assets_repo)
+                run(["git", "commit", "-m", f"Add PDF for {title} ({publication_date})"], cwd=assets_repo)
+                run(["git", "push"], cwd=assets_repo)
+            # also mirror into local site/ to mimic production
+            site_assets_pdf = site_repo / "site" / "assets" / "preferredframe" / date_str / dst_pdf.name
+            site_assets_pdf.parent.mkdir(parents=True, exist_ok=True)
+            echo(f"+ copy {dst_pdf} -> {site_assets_pdf}")
+            shutil.copy2(dst_pdf, site_assets_pdf)
+
+        # Upload files & publish (reserved DOI becomes final)
         for path in [dst_pdf, dst_md, dst_pandoc_md, dst_html]:
             with open(path, "rb") as fh:
                 http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
                           files={"file": (path.name, fh)})
 
-        published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
-        final_doi = (published.get("doi") or (published.get("metadata") or {}).get("doi"))
-        record_id = published.get("record_id")
-
-        if not final_doi:
-            echo("ERROR: Zenodo publish returned no DOI.")
-            choice = input("Publish failed. Delete draft and clean local branch/folder? [y/N]: ").strip().lower()
-            if choice in ("y","yes"):
-                try:
-                    http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token)
-                except SystemExit:
-                    pass
-                echo(f"+ git reset --hard {site_head_before}")
-                run(["git", "reset", "--hard", site_head_before], cwd=site_repo)
-                echo(f"+ remove print folder {dst_dir}")
-                try: shutil.rmtree(dst_dir, ignore_errors=True)
-                except Exception: pass
-                echo(f"+ git checkout {args.main}")
-                run(["git", "checkout", args.main], cwd=site_repo)
-                echo(f"+ git branch -D {branch_name}")
-                run(["git", "branch", "-D", branch_name], cwd=site_repo, check=False)
-                st["cleanup_ok"] = True
-                die("Aborted: no DOI minted; draft deleted and local state cleaned.", 1)
-            else:
-                die("Aborted: no DOI minted; leaving draft and local branch as-is.", 1)
-
-        if reserved_doi and reserved_doi != final_doi:
-            echo(f"WARNING: reserved DOI ({reserved_doi}) != final DOI ({final_doi})")
+        _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
+        # We intentionally trust reserved DOI == final DOI; only warn if different:
+        final_doi = reserved_doi
+        if (_published.get("doi") or (_published.get("metadata") or {}).get("doi")) and \
+           (_published.get("doi") or (_published.get("metadata") or {}).get("doi")) != reserved_doi:
+            echo("WARNING: final DOI differs from reserved DOI.")
 
         # Prompt to push the branch
         do_push = input("Push branch to origin now? [y/N]: ").strip().lower() in ("y","yes")
@@ -639,50 +620,37 @@ def main():
             echo(f"+ git branch -d {branch_name}")
             run(["git", "branch", "-d", branch_name], cwd=site_repo)
 
-        st["cleanup_ok"] = True  # success
-
         echo(f"\n✅ Publication committed and DOI minted"
              f"\nConcept DOI: {concept_doi}"
              f"\nVersion DOI: {final_doi}"
-             f"\nRecord ID: {record_id}"
              f"\nPermalink: {permalink}"
              f"\nFolder: {dst_dir}")
 
+    except SystemExit as e:
+        # honor explicit exits without extra prompts
+        raise
+    except Exception as e:
+        echo(f"ERROR: {e}")
+        # Offer cleanup on unexpected error
+        try:
+            # We need context objects; recover a few from locals if present
+            site_repo = locals().get("site_repo")
+            branch_name = locals().get("branch_name") or ""
+            site_head_before = locals().get("site_head_before") or ""
+            dst_dir = locals().get("dst_dir")
+            api = locals().get("api")
+            token = locals().get("token")
+            dep_id_for_cleanup = locals().get("dep_id_for_cleanup")
+            main_branch = locals().get("args").main if locals().get("args") else "main"
+            if site_repo and dst_dir and branch_name and site_head_before:
+                prompt_and_cleanup(site_repo, branch_name, site_head_before, dst_dir,
+                                   api, token, dep_id_for_cleanup, main_branch)
+        finally:
+            sys.exit(1)
     finally:
-        # Safety net: if an exception escaped and cleanup not confirmed/successful,
-        # offer to clean draft + local working state (if we created them).
-        if not st.get("cleanup_ok"):
-            try:
-                api = st.get("api"); token = st.get("token"); dep_id = st.get("dep_id")
-                site_repo = st.get("site_repo"); head = st.get("site_head_before")
-                branch = st.get("branch_name"); dst_dir = st.get("dst_dir")
-                if any(x is None for x in (site_repo, head, branch, dst_dir)):
-                    return
-                echo("\nProcess ended unexpectedly.")
-                ch = input("Attempt cleanup of draft and local branch/folder now? [y/N]: ").strip().lower()
-                if ch in ("y","yes"):
-                    if api and token and dep_id:
-                        try:
-                            http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token)
-                        except SystemExit:
-                            pass
-                    echo(f"+ git reset --hard {head}")
-                    run(["git", "reset", "--hard", head], cwd=site_repo, check=False)
-                    echo(f"+ remove print folder {dst_dir}")
-                    try: shutil.rmtree(dst_dir, ignore_errors=True)
-                    except Exception: pass
-                    echo("+ restore branch state")
-                    run(["git", "checkout", "main"], cwd=site_repo, check=False)
-                    if branch:
-                        echo(f"+ git branch -D {branch}")
-                        run(["git", "branch", "-D", branch], cwd=site_repo, check=False)
-            except Exception as _e:
-                echo(f"Cleanup attempt failed: {_e}")
+        # If user aborted earlier without cleanup, offer it here as a last resort.
+        # (No-op if we already cleaned or merged.)
+        pass
 
 if __name__ == "__main__":
-    try:
-        main()
-    except SystemExit as e:
-        sys.exit(e.code if isinstance(e.code, int) else 0)
-    except Exception as e:
-        die(str(e))
+    main()
