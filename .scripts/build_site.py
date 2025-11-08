@@ -613,10 +613,12 @@ def build_sitemap_and_robots():
 
     robots = (
         "User-agent: *\n"
-        "Allow: /\n"
+        "Disallow: /\n"
+        "Allow: /prints/\n"
         f"Sitemap: {BASE_URL}/sitemap.xml\n"
     )
     (OUT/"robots.txt").write_text(robots, encoding="utf-8")
+
 
 # ---------- build ----------
 def main():
