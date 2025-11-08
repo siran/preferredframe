@@ -1,41 +1,32 @@
 <meta charset="utf-8">
 <style>
-    /* preserve human-readable Markdown layout */
+    /* modest page margin */
     body {
         white-space: pre-wrap;
-        /* <-- critical */
         font-family: monospace;
         font-size: 18px;
         line-height: 1.5;
-        margin: 2em;
-        /*max-width: 80ch;*/
     }
 
-    /*a {
-        color: #0645ad;
-        text-decoration: none;
+    /* markdown-style pages (directory indexes, header/footer text) */
+    main>pre,
+    main.paper~* {
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 18px;
+        line-height: 1.5;
     }
 
-    a:hover {
-        text-decoration: underline;
-    }*/
+    /* embedded HTML paper: normal HTML look */
+    main.paper {
+        white-space: normal;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        line-height: 1.6;
+        max-width: 72ch;
+        margin: 1.25rem auto;
+    }
+
+    main.paper * {
+        white-space: normal;
+    }
 </style>
-<script>
-    (function () {
-        try {
-            var html = document.body.innerHTML;
-            var i = html.indexOf('<meta');
-            var pre = i >= 0 ? html.slice(0, i) : html;
-
-            // Markdown links: allow spaces; trim
-            pre = pre.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
-                return '<a href="' + u.trim() + '">' + t + '</a>';
-            });
-
-            // Bare URLs → <a>; don't match inside ](URL)
-            pre = pre.replace(/(^|\s)((https?:\/\/[^\s)]+))/g, '$1<a href="$2">$2</a>');
-
-            document.body.innerHTML = pre + (i >= 0 ? html.slice(i) : '');
-        } catch (e) { }
-    })();
-</script>

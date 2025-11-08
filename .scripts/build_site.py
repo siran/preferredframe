@@ -4,8 +4,9 @@ import os, subprocess, urllib.parse, shutil, re, json
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse, quote
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
+import yaml
 
 # ---------- config ----------
 EXCLUDE_NAMES = {
@@ -13,7 +14,6 @@ EXCLUDE_NAMES = {
     "__pycache__", ".mypy_cache",".pytest_cache",".ruff_cache",".cache",
     "Makefile","index.html","_staging"
 }
-# PDFs are NOT mirrored to site/ (served only from assets domain)
 MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
 
 # ---------- repo autodetect ----------
@@ -34,7 +34,7 @@ def detect_repo_branch():
     repo  = os.getenv("SITE_REPO")
     branch= os.getenv("SITE_BRANCH")
 
-    gh = os.getenv("GITHUB_REPOSITORY")  # "owner/repo"
+    gh = os.getenv("GITHUB_REPOSITORY")
     if gh and "/" in gh:
         o, r = gh.split("/", 1)
         owner = owner or o
@@ -70,9 +70,9 @@ OWNER, REPO, BRANCH = detect_repo_branch()
 # ---------- paths ----------
 ROOT = Path(__file__).resolve().parents[1]
 OUT  = ROOT / "site"
-SRC  = ROOT / ".scripts" / "src"   # header.html / footer.html / coda.html / submit.html
+SRC  = ROOT / ".scripts" / "src"
 
-# ---------- base url & CNAME ----------
+# ---------- base url ----------
 def compute_base_url() -> str:
     v = os.getenv("BASE_URL")
     if v: return v.rstrip("/")
@@ -83,12 +83,12 @@ def compute_base_url() -> str:
 BASE_URL = compute_base_url()
 
 def write_cname_if_custom(base_url: str):
-    host = urlparse(base_url).hostname  # strip port
+    host = urlparse(base_url).hostname
     if not host: return
     if host.endswith(".github.io"): return
-    if host in {"localhost", "127.0.0.1"}: return
+    if host in {"localhost","127.0.0.1"}: return
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "CNAME").write_text(host + "\n", encoding="utf-8")
+    (OUT/"CNAME").write_text(host+"\n", encoding="utf-8")
 
 # ---------- helpers ----------
 def rel(p: Path) -> Path: return p.relative_to(ROOT)
@@ -107,10 +107,9 @@ def write_html(out_html: Path, body_html: str, head_extra: str = ""):
     footer = load_text(SRC / "footer.html")
     coda   = load_text(SRC / "coda.html")
 
-    doc = "".join(s for s in (header, body_html, footer) if s is not None)
+    doc = "".join(s for s in (header, body_html, footer) if s)
 
     if head_extra:
-        # ensure UTF-8 declared first in head (belt-and-suspenders)
         charset = '<meta charset="UTF-8">'
         if charset not in head_extra:
             head_extra = charset + "\n" + head_extra
@@ -123,13 +122,13 @@ def write_html(out_html: Path, body_html: str, head_extra: str = ""):
     ny = ZoneInfo("America/New_York")
     now = datetime.now(ny)
     offset = now.utcoffset()
-    hrs = int(offset.total_seconds() // 3600) if offset else 0
-    timestamp = f"(generated at: {now.strftime('%Y-%m-%d %H:%M %Z')} {hrs:+d})"
+    hrs = int(offset.total_seconds()//3600) if offset else 0
+    stamp = f"(generated at: {now.strftime('%Y-%m-%d %H:%M %Z')} {hrs:+d})"
 
     if not doc.endswith("\n"):
         doc += "\n"
-    doc += timestamp
-    if coda is not None:
+    doc += stamp
+    if coda:
         doc += coda
 
     out_html.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +139,6 @@ def write_md_like_page(out_html: Path, md_body: str, head_extra: str = ""):
     write_html(out_html, body, head_extra=head_extra)
 
 def crumb_link(parts: list[str]) -> str:
-    """Build HTML breadcrumbs with UTF-8 icons."""
     html = ['<nav class="breadcrumbs">']
     html.append('<a href="/">🏠 Home</a>')
     base = ""
@@ -151,106 +149,88 @@ def crumb_link(parts: list[str]) -> str:
     html.append('</nav>')
     return "".join(html)
 
-# ---------- tiny YAML loader (tolerant) ----------
-def read_yaml(p: Path) -> dict:
-    try:
-        import yaml
-        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-        try:
-            lines = p.read_text(encoding="utf-8").splitlines()
-        except Exception:
-            return {}
-        stack = [data]; indents = [0]
-        for ln in lines:
-            if not ln.strip() or ln.lstrip().startswith("#"): continue
-            m = re.match(r'^(\s*)([^:]+):\s*(.*)$', ln)
-            if not m: continue
-            indent = len(m.group(1).replace("\t","  "))
-            key = m.group(2).strip()
-            val = m.group(3).strip()
-            while indents and indent < indents[-1]:
-                stack.pop(); indents.pop()
-            cur = stack[-1]
-            if val == "" or val == "|":
-                cur[key] = {}
-                stack.append(cur[key]); indents.append(indent+2)
-            else:
-                if val.startswith('"') and val.endswith('"'):
-                    val = val[1:-1]
-                cur[key] = val
-        return data
+# ---------- dates ----------
+def _to_datetime(obj) -> datetime | None:
+    if isinstance(obj, datetime): return obj
+    if isinstance(obj, date):    return datetime.combine(obj, datetime.min.time())
+    if isinstance(obj, str):
+        for fmt in ("%Y-%m-%d","%Y-%m","%Y"):
+            try: return datetime.strptime(obj, fmt)
+            except Exception: pass
+    return None
 
-# ---------- dates/util ----------
-def month_year(iso_date: str) -> str:
-    try:
-        dt = datetime.strptime(iso_date, "%Y-%m-%d")
-        return dt.strftime("%B %Y")
-    except Exception:
-        try:
-            dt = datetime.strptime(iso_date, "%Y-%m")
-            return dt.strftime("%B %Y")
-        except Exception:
-            try:
-                dt = datetime.strptime(iso_date, "%Y")
-                return dt.strftime("%Y")
-            except Exception:
-                return iso_date
+def month_year(d) -> str:
+    dt = _to_datetime(d)
+    if not dt:
+        return str(d) if d is not None else ""
+    return dt.strftime("%B %Y")
 
-def scholar_date(s: str) -> str:
-    try:
-        dt = datetime.strptime(s, "%Y-%m-%d")
-        return dt.strftime("%Y/%m/%d")
-    except Exception:
-        return s.replace("-", "/") if s else ""
+def scholar_date(x) -> str:
+    if isinstance(x, datetime): return x.strftime("%Y/%m/%d")
+    if isinstance(x, date):    return x.strftime("%Y/%m/%d")
+    if isinstance(x, str):
+        x = x.strip()
+        if not x: return ""
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", x):
+            y,m,d = x.split("-"); return f"{y}/{m}/{d}"
+        if re.fullmatch(r"\d{4}-\d{2}", x):
+            y,m = x.split("-");   return f"{y}/{m}"
+        if re.fullmatch(r"\d{4}", x): return x
+        return x.replace("-", "/")
+    return ""
+
+def iso_date_str(x) -> str:
+    if isinstance(x, datetime): return x.date().isoformat()
+    if isinstance(x, date):     return x.isoformat()
+    if isinstance(x, str):      return x.strip()
+    return str(x) if x else ""
 
 def extract_html_body(html_text: str) -> str:
     m_open = re.search(r"<body[^>]*>", html_text, flags=re.IGNORECASE|re.DOTALL)
     m_close = re.search(r"</body\s*>", html_text, flags=re.IGNORECASE|re.DOTALL)
     if m_open and m_close and m_close.start() > m_open.end():
         return html_text[m_open.end():m_close.start()]
-    return html_text  # fallback
+    return html_text
 
-def sanitize_embedded_html(html: str) -> str:
-    """Drop a leading placeholder like '- name' that sometimes slips into rendered HTML."""
-    html = re.sub(r'^\s*<p>\s*-?\s*name\s*</p>\s*', '', html, flags=re.IGNORECASE|re.DOTALL)
-    html = re.sub(r'^\s*<li>\s*name\s*</li>\s*', '', html, flags=re.IGNORECASE|re.DOTALL)
-    return html
+# ---------- authors ----------
+def normalize_authors(auth_list):
+    out = []
+    for a in (auth_list or []):
+        if isinstance(a, dict):
+            nm = (a.get("name") or a.get("full_name") or "").strip()
+            oc = (a.get("orcid") or a.get("id") or "").strip()
+        else:
+            nm = str(a).strip(); oc = ""
+        if not nm: continue
+        if nm.lower() == "name": continue
+        out.append({"name": nm, "orcid": oc})
+    return out
 
-# ---------- page builders ----------
+def fmt_author(a):
+    nm = a.get("name","").strip()
+    oc = a.get("orcid","").strip()
+    if not nm: return ""
+    if oc: return f'{nm} (<a href="{oc}">ORCID</a>)'
+    return nm
+
+# ---------- article pages ----------
 def build_article_pages():
-    """
-    Input layout:
-      prints/<stem>/<doi_prefix>/<doi_suffix>/{ <stem>.md, <stem>.html, <stem>.pandoc.md, provenance.yaml }
-
-    Output:
-      site/prints/<stem>/<doi_prefix>/<doi_suffix>/index.html   (version page; embeds that version's HTML)
-      site/prints/<stem>/index.html                             (stem page; latest version + versions list)
-      site/prints/doi/<doi_prefix>/<doi_suffix>/index.html      (alias of version page)
-
-    PDFs are not mirrored; pages link to assets.preferredframe.com per provenance.
-    """
-    prints = ROOT / "prints"
-    if not prints.exists():
-        return
+    prints = ROOT/"prints"
+    if not prints.exists(): return
 
     records = []
     for prov in prints.glob("*/*/*/provenance.yaml"):
-        try:
-            data = read_yaml(prov)
-        except Exception:
-            continue
+        data = yaml.safe_load(prov.read_text(encoding="utf-8"))
 
         stem = prov.parent.parent.parent.name
         doi_prefix = prov.parent.parent.name
         doi_suffix = prov.parent.name
 
         pf = data.get("parsed_from_pnpmd") or {}
-        title  = pf.get("title") or ""
-        authors= pf.get("authors") or []
-        abstract = pf.get("abstract") or ""
-        kws    = pf.get("keywords") or []
+        title   = pf.get("title") or ""
+        authors = normalize_authors(pf.get("authors"))
+        abstract= pf.get("abstract") or ""
+        kws     = pf.get("keywords") or []
         date_norm = pf.get("date") or ""
         zenodo  = data.get("zenodo") or {}
         doi     = zenodo.get("doi") or ""
@@ -268,72 +248,53 @@ def build_article_pages():
         records.append({
             "prov": prov, "stem": stem,
             "doi_prefix": doi_prefix, "doi_suffix": doi_suffix,
-            "title": title, "authors": authors, "abstract": abstract, "kws": kws,
+            "title": title, "authors": authors,
+            "abstract": abstract, "kws": kws,
             "date": date_norm, "doi": doi, "concept": concept,
             "assets_pdf": assets_pdf,
             "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name
         })
 
-    if not records:
-        return
-
-    # group by stem
     groups = {}
     for r in records:
         groups.setdefault(r["stem"], []).append(r)
 
-    # author formatting
-    def fmt_author(a):
-        name = a.get("name") if isinstance(a, dict) else str(a)
-        orcid = a.get("orcid") if isinstance(a, dict) else None
-        if orcid:
-            return f'{name} (<a href="{orcid}">ORCID</a>)'
-        return name
-
     for stem, items in groups.items():
-        # sort versions by date desc; fallback to file mtime
         def sort_key(it):
-            try:
-                return datetime.strptime(it["date"], "%Y-%m-%d")
-            except Exception:
-                return datetime.fromtimestamp(it["prov"].stat().st_mtime)
+            dt = _to_datetime(it["date"])
+            return dt or datetime.fromtimestamp(it["prov"].stat().st_mtime)
         versions = sorted(items, key=sort_key, reverse=True)
         latest = versions[0]
 
-        # ---------- Build each VERSION page ----------
+        # --- each VERSION page ---
         for it in versions:
-            src_dir = it["prov"].parent
-            out_dir = OUT / "prints" / stem / it["doi_prefix"] / it["doi_suffix"]
+            src = it["prov"].parent
+            out_dir = OUT/"prints"/stem/it["doi_prefix"]/it["doi_suffix"]
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            # mirror non-PDF artifacts
-            for f in src_dir.iterdir():
+            for f in src.iterdir():
                 if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
-                    dst = OUT / rel(f)
+                    dst = OUT/rel(f)
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dst)
 
-            # local links (within site/)
-            local_md   = f"/{(OUT/rel(src_dir/it['md_name'])).relative_to(OUT).as_posix()}" if it["md_name"] else None
-            local_html = f"/{(OUT/rel(src_dir/it['html_name'])).relative_to(OUT).as_posix()}" if it["html_name"] else None
-            local_pmd  = f"/{(OUT/rel(src_dir/it['pmd_name'])).relative_to(OUT).as_posix()}" if it["pmd_name"] else None
+            local_md   = f"/{(OUT/rel(src/it['md_name'])).relative_to(OUT).as_posix()}" if it["md_name"] else None
+            local_html = f"/{(OUT/rel(src/it['html_name'])).relative_to(OUT).as_posix()}" if it["html_name"] else None
+            local_pmd  = f"/{(OUT/rel(src/it['pmd_name'])).relative_to(OUT).as_posix()}" if it["pmd_name"] else None
 
-            # read HTML body to embed (no wrapper)
             html_body = ""
-            if it["html_name"] and (src_dir / it["html_name"]).exists():
+            if it["html_name"] and (src/it["html_name"]).exists():
                 try:
-                    htxt = (src_dir / it["html_name"]).read_text(encoding="utf-8")
-                    html_body = sanitize_embedded_html(extract_html_body(htxt))
+                    htxt = (src/it["html_name"]).read_text(encoding="utf-8")
+                    html_body = extract_html_body(htxt)
                 except Exception:
                     html_body = ""
 
-            # top links: MD + PDF (+ pmd if exists)
             top_links = []
             if local_md:  top_links.append(f'<a href="{local_md}">Markdown</a>')
             if it["assets_pdf"]: top_links.append(f'<a href="{it["assets_pdf"]}">PDF</a>')
             if local_pmd: top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
-            # breadcrumbs + "Files"
             breadcrumbs = crumb_link(["prints", stem, it["doi_prefix"], it["doi_suffix"]])
             files_list = []
             prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
@@ -343,11 +304,9 @@ def build_article_pages():
             if it["assets_pdf"]: files_list.append(f'<li><a href="{it["assets_pdf"]}">PDF</a></li>')
             files_ul = "<ul>" + "".join(files_list) + "</ul>"
 
-            # clean authors for display/meta
-            display_authors = [a for a in it["authors"] if (a.get("name") if isinstance(a, dict) else str(a)).strip().lower() not in {"", "name"}]
-            authors_html = ", ".join(fmt_author(a) for a in display_authors) if display_authors else ""
+            display_authors = it["authors"]
+            authors_html = ", ".join(filter(None, (fmt_author(a) for a in display_authors)))
 
-            # page body
             body = []
             body.append("<main class='paper'>")
             body.append(breadcrumbs)
@@ -363,91 +322,92 @@ def build_article_pages():
             if html_body:
                 body.append("<h2>Article</h2>")
                 body.append(html_body)
-            body.append("</main>\n")
+            body.append("</main>")
 
-            # HEAD metadata (version)
             version_url = f"{BASE_URL}/prints/{stem}/{it['doi_prefix']}/{it['doi_suffix']}/"
-            head_lines = []
-            head_lines.append('<meta charset="UTF-8">')
-            head_lines.append(f'<link rel="canonical" href="{version_url}">')
-            if it["assets_pdf"]: head_lines.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
-            head_lines.append('<meta name="robots" content="index,follow">')
-            if it['title']: head_lines.append(f'<meta name="citation_title" content="{it["title"]}">')
+            head = []
+            head.append('<meta charset="UTF-8">')
+            head.append(f'<link rel="canonical" href="{version_url}">')
+            if it["assets_pdf"]:
+                head.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
+            head.append('<meta name="robots" content="index,follow">')
+            if it['title']: head.append(f'<meta name="citation_title" content="{it["title"]}">')
             for a in display_authors:
-                nm = a.get("name") if isinstance(a, dict) else str(a)
-                head_lines.append(f'<meta name="citation_author" content="{nm}">')
+                nm = a.get("name","")
+                if nm: head.append(f'<meta name="citation_author" content="{nm}">')
             if it["date"]:
-                head_lines.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
-            head_lines.append('<meta name="citation_journal_title" content="Preferred Frame">')
-            if it["assets_pdf"]: head_lines.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
-            if it["doi"]: head_lines.append(f'<meta name="citation_doi" content="{it["doi"]}">')
+                head.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
+            head.append('<meta name="citation_journal_title" content="Preferred Frame">')
+            if it["assets_pdf"]:
+                head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
+            if it["doi"]:
+                head.append(f'<meta name="citation_doi" content="{it["doi"]}">')
             desc = it["abstract"] or it["title"]
             if desc:
-                head_lines.append(f'<meta name="description" content="{desc}">')
-                head_lines.append(f'<meta property="og:description" content="{desc}">')
-            head_lines.append(f'<meta property="og:type" content="article">')
-            head_lines.append(f'<meta property="og:title" content="{it["title"]}">')
-            head_lines.append(f'<meta property="og:url" content="{version_url}">')
+                head.append(f'<meta name="description" content="{desc}">')
+                head.append(f'<meta property="og:description" content="{desc}">')
+            head.append(f'<meta property="og:type" content="article">')
+            head.append(f'<meta property="og:title" content="{it["title"]}">')
+            head.append(f'<meta property="og:url" content="{version_url}">')
 
-            # JSON-LD
             authors_ld = []
             for a in display_authors:
-                nm = a.get("name") if isinstance(a, dict) else str(a)
-                orcid = (a.get("orcid") if isinstance(a, dict) else None) or ""
+                nm = a.get("name","").strip()
+                oc = a.get("orcid","").strip()
+                if not nm: continue
                 ent = {"@type":"Person","name": nm}
-                if orcid: ent["sameAs"] = [orcid]
+                if oc: ent["sameAs"] = [oc]
                 authors_ld.append(ent)
             enc = []
             if it["assets_pdf"]:
                 enc.append({"@type":"MediaObject","contentUrl": it["assets_pdf"],"encodingFormat":"application/pdf"})
             article_ld = {
-                "@context": "https://schema.org",
-                "@type": "Article",
+                "@context":"https://schema.org",
+                "@type":"Article",
                 "headline": it["title"],
                 "author": authors_ld or [{"@type":"Person","name":"Unknown"}],
-                "datePublished": it["date"] or "",
+                "datePublished": iso_date_str(it["date"]),
                 "isPartOf": {"@type":"Periodical","name":"Preferred Frame"},
                 "url": version_url
             }
             if enc: article_ld["encoding"] = enc
             if it["doi"]:
                 article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
-            head_lines.append('<script type="application/ld+json">' +
-                              json.dumps(article_ld, ensure_ascii=False) +
-                              '</script>')
-            head_extra = "\n".join(head_lines) + "\n"
+            head.append(
+                '<script type="application/ld+json">'
+                + json.dumps(article_ld, ensure_ascii=False)
+                + '</script>'
+            )
+            head_extra = "\n".join(head) + "\n"
 
-            # write version page
-            out_html = out_dir / "index.html"
-            write_html(out_html, "\n".join(body), head_extra=head_extra)
+            write_html(out_dir/"index.html", "\n".join(body), head_extra=head_extra)
 
-            # DOI alias page (optional)
-            doi_alias_dir = OUT / "prints" / "doi" / it["doi_prefix"] / it["doi_suffix"]
-            doi_alias_dir.mkdir(parents=True, exist_ok=True)
-            alias_out = doi_alias_dir / "index.html"
-            write_html(alias_out, "\n".join(body), head_extra=head_extra)
+            # DOI alias
+            alias_dir = OUT/"prints"/"doi"/it["doi_prefix"]/it["doi_suffix"]
+            alias_dir.mkdir(parents=True, exist_ok=True)
+            write_html(alias_dir/"index.html", "\n".join(body), head_extra=head_extra)
 
-        # ---------- Build STEM (latest + versions list) ----------
+        # --- STEM page ---
         it = latest
-        src_dir = it["prov"].parent
-        stem_out = OUT / "prints" / stem
+        src = it["prov"].parent
+        stem_out = OUT/"prints"/stem
         stem_out.mkdir(parents=True, exist_ok=True)
 
-        for f in src_dir.iterdir():
+        for f in src.iterdir():
             if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
-                dst = OUT / rel(f)
+                dst = OUT/rel(f)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(f, dst)
 
-        local_md   = f"/{(OUT/rel(src_dir/it['md_name'])).relative_to(OUT).as_posix()}" if it["md_name"] else None
-        local_html = f"/{(OUT/rel(src_dir/it['html_name'])).relative_to(OUT).as_posix()}" if it["html_name"] else None
-        local_pmd  = f"/{(OUT/rel(src_dir/it['pmd_name'])).relative_to(OUT).as_posix()}" if it["pmd_name"] else None
+        local_md   = f"/{(OUT/rel(src/it['md_name'])).relative_to(OUT).as_posix()}" if it["md_name"] else None
+        local_html = f"/{(OUT/rel(src/it['html_name'])).relative_to(OUT).as_posix()}" if it["html_name"] else None
+        local_pmd  = f"/{(OUT/rel(src/it['pmd_name'])).relative_to(OUT).as_posix()}" if it["pmd_name"] else None
 
         html_body = ""
-        if it["html_name"] and (src_dir / it["html_name"]).exists():
+        if it["html_name"] and (src/it["html_name"]).exists():
             try:
-                htxt = (src_dir / it["html_name"]).read_text(encoding="utf-8")
-                html_body = sanitize_embedded_html(extract_html_body(htxt))
+                htxt = (src/it["html_name"]).read_text(encoding="utf-8")
+                html_body = extract_html_body(htxt)
             except Exception:
                 html_body = ""
 
@@ -474,8 +434,8 @@ def build_article_pages():
         if it["assets_pdf"]: top_links.append(f'<a href="{it["assets_pdf"]}">PDF (latest)</a>')
         if local_pmd: top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
-        display_authors = [a for a in it["authors"] if (a.get("name") if isinstance(a, dict) else str(a)).strip().lower() not in {"", "name"}]
-        authors_html = ", ".join(fmt_author(a) for a in display_authors) if display_authors else ""
+        display_authors = it["authors"]
+        authors_html = ", ".join(filter(None, (fmt_author(a) for a in display_authors)))
 
         body = []
         body.append("<main class='paper'>")
@@ -495,72 +455,75 @@ def build_article_pages():
         if html_body:
             body.append("<h2>Article (latest)</h2>")
             body.append(html_body)
-        body.append("</main>\n")
+        body.append("</main>")
 
         stem_url = f"{BASE_URL}/prints/{stem}/"
-        head_lines = []
-        head_lines.append('<meta charset="UTF-8">')
-        head_lines.append(f'<link rel="canonical" href="{stem_url}">')
-        if it["assets_pdf"]: head_lines.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
-        head_lines.append('<meta name="robots" content="index,follow">')
-        if it['title']: head_lines.append(f'<meta name="citation_title" content="{it["title"]}">')
-        for a in display_authors:
-            nm = a.get("name") if isinstance(a, dict) else str(a)
-            head_lines.append(f'<meta name="citation_author" content="{nm}">')
-        if it["date"]:
-            head_lines.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
-        head_lines.append('<meta name="citation_journal_title" content="Preferred Frame">')
+        head = []
+        head.append('<meta charset="UTF-8">')
+        head.append(f'<link rel="canonical" href="{stem_url}">')
         if it["assets_pdf"]:
-            head_lines.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
+            head.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
+        head.append('<meta name="robots" content="index,follow">')
+        if it['title']: head.append(f'<meta name="citation_title" content="{it["title"]}">')
+        for a in display_authors:
+            nm = a.get("name","")
+            if nm: head.append(f'<meta name="citation_author" content="{nm}">')
+        if it["date"]:
+            head.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
+        head.append('<meta name="citation_journal_title" content="Preferred Frame">')
+        if it["assets_pdf"]:
+            head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
         if it["doi"]:
-            head_lines.append(f'<meta name="citation_doi" content="{it["doi"]}">')
+            head.append(f'<meta name="citation_doi" content="{it["doi"]}">')
         desc = it["abstract"] or it["title"]
         if desc:
-            head_lines.append(f'<meta name="description" content="{desc}">')
-            head_lines.append(f'<meta property="og:description" content="{desc}">')
-        head_lines.append(f'<meta property="og:type" content="article">')
-        head_lines.append(f'<meta property="og:title" content="{it["title"]}">')
-        head_lines.append(f'<meta property="og:url" content="{stem_url}">')
+            head.append(f'<meta name="description" content="{desc}">')
+            head.append(f'<meta property="og:description" content="{desc}">')
+        head.append(f'<meta property="og:type" content="article">')
+        head.append(f'<meta property="og:title" content="{it["title"]}">')
+        head.append(f'<meta property="og:url" content="{stem_url}">')
 
         authors_ld = []
         for a in display_authors:
-            nm = a.get("name") if isinstance(a, dict) else str(a)
-            orcid = (a.get("orcid") if isinstance(a, dict) else None) or ""
+            nm = a.get("name","").strip()
+            oc = a.get("orcid","").strip()
+            if not nm: continue
             ent = {"@type":"Person","name": nm}
-            if orcid: ent["sameAs"] = [orcid]
+            if oc: ent["sameAs"] = [oc]
             authors_ld.append(ent)
         enc = []
         if it["assets_pdf"]:
             enc.append({"@type":"MediaObject","contentUrl": it["assets_pdf"],"encodingFormat":"application/pdf"})
         article_ld = {
-            "@context": "https://schema.org",
-            "@type": "Article",
+            "@context":"https://schema.org",
+            "@type":"Article",
             "headline": it["title"],
             "author": authors_ld or [{"@type":"Person","name":"Unknown"}],
-            "datePublished": it["date"] or "",
+            "datePublished": iso_date_str(it["date"]),
             "isPartOf": {"@type":"Periodical","name":"Preferred Frame"},
             "url": stem_url
         }
         if enc: article_ld["encoding"] = enc
         if it["doi"]:
             article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
-        head_lines.append('<script type="application/ld+json">' +
-                          json.dumps(article_ld, ensure_ascii=False) +
-                          '</script>')
-        head_extra = "\n".join(head_lines) + "\n"
+        head.append(
+            '<script type="application/ld+json">'
+            + json.dumps(article_ld, ensure_ascii=False)
+            + '</script>'
+        )
+        head_extra = "\n".join(head) + "\n"
 
-        out_html = stem_out / "index.html"
-        write_html(out_html, "\n".join(body), head_extra=head_extra)
+        write_html(stem_out/"index.html", "\n".join(body), head_extra=head_extra)
 
-# ---------- directory index ----------
+# ---------- dir index ----------
 def breadcrumbs(rel_dir: Path) -> str:
     depth = len(rel_dir.parts)
-    to_root = "./" if depth == 0 else "../" * depth
-    crumbs = [f"[🏠 Home]({to_root})"]
+    to_root = "./" if depth == 0 else "../"*depth
+    items = [f"[🏠 Home]({to_root})"]
     for i, part in enumerate(rel_dir.parts):
-        up = "../" * (len(rel_dir.parts) - i - 1) or "./"
-        crumbs.append(f"/ [📂 {part}]({up})")
-    return " ".join(crumbs)
+        up = "../"*(len(rel_dir.parts)-i-1) or "./"
+        items.append(f"/ [📂 {part}]({up})")
+    return " ".join(items)
 
 def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     rel_dir = rel(dir_abs) if dir_abs != ROOT else Path()
@@ -580,7 +543,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
         else:
             p_rel = rel(it.path)
             view = None
-            mirrored = OUT / p_rel
+            mirrored = OUT/p_rel
             if mirrored.exists() and it.path.suffix.lower() in {".html",".md",".yaml",".yml",".pandoc.md"}:
                 view = "/" + mirrored.relative_to(OUT).as_posix()
             lines.append(f"- 📄 {it.name}")
@@ -591,11 +554,10 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
 
 def copy_static():
     OUT.mkdir(parents=True, exist_ok=True)
-    static_names = ["submit.html"]
-    for name in static_names:
-        src = SRC / name
+    for name in ["submit.html"]:
+        src = SRC/name
         if src.exists():
-            dst = OUT / name
+            dst = OUT/name
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
@@ -605,10 +567,9 @@ def main():
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
 
-    # FIRST: build article pages & mirror assets (except PDFs)
     build_article_pages()
 
-    # THEN: build directory indexes and mirror any remaining assets
+    # directory listings
     for dirpath, dirnames, filenames in os.walk(ROOT):
         d = Path(dirpath)
         if d == OUT:
@@ -619,7 +580,7 @@ def main():
                 dirnames.clear(); continue
             if (Path(dirpath)/"pyvenv.cfg").exists():
                 dirnames.clear(); continue
-        # prune visible dirs
+
         keep=[]
         for dd in list(dirnames):
             if dd in EXCLUDE_NAMES: continue
@@ -628,32 +589,27 @@ def main():
             keep.append(dd)
         dirnames[:] = keep
 
-        # mirror selected assets into OUT to serve from preferredframe.com
         for fname in filenames:
             if fname.startswith("."): continue
-            p = d / fname
+            p = d/fname
             if p.suffix.lower() in MIRROR_EXTS and "prints" in p.parts:
-                dst = OUT / rel(p)
+                dst = OUT/rel(p)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, dst)
 
-        items: list[Item] = []
+        items = []
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
             if p.name.startswith(".") and p.name != ".well-known": continue
             if (p/"pyvenv.cfg").exists(): continue
             items.append(Item(name=p.name, is_dir=True, mtime=p.stat().st_mtime, path=p))
-
         for p in sorted([x for x in d.iterdir() if x.is_file() and not x.name.startswith(".")],
                         key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
             items.append(Item(name=p.name, is_dir=False, mtime=p.stat().st_mtime, path=p))
 
-        out_html = (OUT / rel(d) / "index.html") if d != ROOT else (OUT / "index.html")
-
-        # do NOT overwrite custom pages (stem/version already emitted)
-        if out_html.exists():
-            continue
+        out_html = (OUT/rel(d)/"index.html") if d != ROOT else (OUT/"index.html")
+        if out_html.exists(): continue
 
         md_body = format_dir_index(d, items)
         write_md_like_page(out_html, md_body)
