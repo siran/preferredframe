@@ -1,6 +1,6 @@
 /site/*
 site
 *.code-workspace
-.env
+.env*
 venv
 gpt5push.sh
