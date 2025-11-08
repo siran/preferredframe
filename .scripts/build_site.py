@@ -575,7 +575,42 @@ def _url_from_out_path(p: Path) -> str:
         return f"{BASE_URL}/" + rp
     return ""  # ignore other files
 
+from urllib.parse import urlparse
+
+def _canonical_origin_from_provenance() -> str | None:
+    """Infer https://preferredframe.com from provenance.site.permalink/html_canonical."""
+    try:
+        prints_dir = ROOT / "prints"
+        if not prints_dir.exists():
+            return None
+        for prov in prints_dir.glob("*/*/*/provenance.yaml"):
+            try:
+                data = yaml.safe_load(prov.read_text(encoding="utf-8"))
+                site_block = (data or {}).get("site") or {}
+                for key in ("permalink", "html_canonical"):
+                    u = site_block.get(key) or ""
+                    if u.startswith("http"):
+                        p = urlparse(u)
+                        if p.scheme and p.netloc:
+                            return f"{p.scheme}://{p.netloc}"
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
 def build_sitemap_and_robots():
+    # Canonical origin: ENV → provenance → BASE_URL
+    origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
+
+    def _remap_origin(loc: str) -> str:
+        """Replace scheme+host in loc with canonical origin, keep the path."""
+        try:
+            p = urlparse(loc)
+            return f"{origin}{p.path}"
+        except Exception:
+            return loc
+
     urls = []
     for path in OUT.rglob("*.html"):
         if path.name.startswith("."):
@@ -583,11 +618,12 @@ def build_sitemap_and_robots():
         loc = _url_from_out_path(path)
         if not loc:
             continue
+        loc = _remap_origin(loc)
         mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         lastmod = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
         urls.append((loc, lastmod))
 
-    # de-dup while preserving lastmod of latest file seen
+    # de-dup, keep latest lastmod
     seen = {}
     for loc, lastmod in urls:
         if (loc not in seen) or (lastmod > seen[loc]):
@@ -609,7 +645,7 @@ def build_sitemap_and_robots():
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         + "\n".join(items) + "\n</urlset>\n"
     )
-    (OUT/"sitemap.xml").write_text(sitemap, encoding="utf-8")
+    (OUT / "sitemap.xml").write_text(sitemap, encoding="utf-8")
 
     robots = (
         "User-agent: *\n"
@@ -617,9 +653,9 @@ def build_sitemap_and_robots():
         "Allow: /prints/\n"
         "Allow: /sitemap.xml\n"
         "Allow: /robots.txt\n"
-        f"Sitemap: {BASE_URL}/sitemap.xml\n"
+        f"Sitemap: {origin}/sitemap.xml\n"
     )
-    (OUT/"robots.txt").write_text(robots, encoding="utf-8")
+    (OUT / "robots.txt").write_text(robots, encoding="utf-8")
 
 
 # ---------- build ----------
