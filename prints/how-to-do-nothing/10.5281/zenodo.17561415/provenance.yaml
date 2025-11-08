@@ -1,0 +1,39 @@
+journal: Preferred Frame
+source:
+  repo_origin: git@github.com:siran/writing.git
+  commit: 77a1af6669f3eca42108942165175f5bfd508a7a
+artifacts:
+  main: how-to-do-nothing.md
+  additional:
+    pandoc_md: how-to-do-nothing.pandoc.md
+    html: how-to-do-nothing.html
+parsed_from_pnpmd:
+  title: How to do nothing
+  authors:
+  - name: An M. Rodriguez
+    orcid: https://orcid.org/0009-0009-9098-9468
+  date: '2025-11-08'
+  one_sentence_summary: ''
+  abstract: 'Doing nothing is harder than it sounds. This article explores the paradox
+    of “active non-action”: the deliberate choice to pause, to not react, and to let
+    life unfold without unnecessary interference. From Lao Tzu’s Wu Wei to the simple
+    act of standing still in the rain, it argues that quieting the mind is the only
+    way to separate signal from noise. By resisting the impulse to constantly act,
+    we create space for clarity, intention, responsibility, and genuine desire. This
+    is not laziness. It is mindful restraint. A practice of simply being. It is OK
+    to stop. It is OK to breathe. It is OK to do nothing.'
+  keywords:
+  - mindfulness
+  - non-action
+  - meditation
+  - being
+  - doing
+scanned:
+  authors_orcid: []
+  references_doi: []
+zenodo:
+  doi: 10.5281/zenodo.17561415
+assets: {}
+site:
+  permalink: https://preferredframe.com/prints/how-to-do-nothing/10.5281/zenodo.17561415/
+  html_canonical: https://preferredframe.com/prints/how-to-do-nothing/10.5281/zenodo.17561415/how-to-do-nothing.html
