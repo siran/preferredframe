@@ -27,8 +27,7 @@ parsed_from_pnpmd:
 scanned:
   authors_orcid:
     - "https://orcid.org/0009-0009-9098-9468"
-  references_doi:
-[]
+  references_doi: none
 zenodo:
   doi: 10.5281/zenodo.17555930
 assets:
