@@ -20,6 +20,8 @@ Flow:
 
 import os, re, sys, shutil, subprocess
 from pathlib import Path
+import time
+import traceback
 from typing import List, Optional, Dict, Tuple
 from datetime import date, datetime
 
@@ -91,6 +93,22 @@ def zenodo_api_and_token(env: str) -> Tuple[str, str]:
     api = os.environ.get("ZENODO_SANDBOX_API", "https://sandbox.zenodo.org/api")
     return api, token
 
+def http_put_raw(url: str, token: str, fp):
+    """PUT raw bytes to Zenodo bucket (S3-like). fp must be a binary file handle."""
+    try:
+        import requests
+    except Exception:
+        die("Missing dependency: requests. Install with: pip install requests")
+    echo(f"+ HTTP PUT (raw) {url}")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.put(url, data=fp, headers=headers)
+    if not r.ok:
+        try: print(r.text)
+        except Exception: pass
+        die(f"Zenodo bucket PUT error {r.status_code} at {url}")
+    return r.json() if "application/json" in (r.headers.get("Content-Type","")) else {}
+
+
 def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
     try:
         import requests
@@ -98,8 +116,9 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
         die("Missing dependency: requests. Install with: pip install requests")
     echo(f"+ HTTP {method.upper()} {url}")
     headers = {"Authorization": f"Bearer {token}"}
+    print(f"{data=}")
+    print(f"{files=}")
     if method.upper() in ("POST","PUT","PATCH"):
-        print(files)
         r = requests.request(method, url, headers=headers, json=data, files=files)
     else:
         r = requests.request(method, url, headers=headers, params=data)
@@ -431,18 +450,18 @@ def delete_file_if_exists(api: str, token: str, dep_id: int, filename: str):
                 http_json("DELETE", f"{api}/deposit/depositions/{dep_id}/files/{file_id}", token)
             break
 
-def ensure_draft_or_die(api: str, token: str, dep_id: int):
+def ensure_draft_or_die(api: str, token: str, dep_id: int) -> Dict:
     dep = get_deposition(api, token, dep_id)
-    # Zenodo returns e.g. "state": "inprogress" for drafts. Published records
-    # have "submitted": True or links without the /files endpoint.
-    state = dep.get("state") or ""
-    submitted = dep.get("submitted")
+    state = dep.get("state") or ""          # "unsubmitted" or "inprogress" are drafts
+    submitted = dep.get("submitted")        # True after submit
     links = dep.get("links") or {}
-    can_upload = ("files" in links) and (submitted in (False, None)) and (state in ("inprogress", "", None))
+    bucket = links.get("bucket")
+    can_upload = (submitted in (False, None)) and bool(bucket)
     if not can_upload:
-        echo(f"\nZenodo deposition {dep_id} is not modifiable:")
-        echo(f"  state={state!r}, submitted={submitted!r}, links/files={'files' in links}")
-        die("Cannot upload files to a non-draft deposition. Create a new version or keep this record as-is.")
+        echo(f"\nZenodo deposition {dep_id} is not modifiable via bucket:")
+        echo(f"  state={state!r}, submitted={submitted!r}, has_bucket={bool(bucket)}")
+        die("Cannot upload: need a draft with a bucket link. Create a new version or unlock draft.")
+    return dep  # includes links.bucket
 
 def main():
     import argparse
@@ -603,23 +622,24 @@ def main():
     }
     _ = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": full_meta})
 
-    # ---- upload to Zenodo (idempotent) & publish ----
-    ensure_draft_or_die(api, token, dep_id)
+    # ---- upload to Zenodo via bucket (overwrites by name) & publish ----
+    dep = ensure_draft_or_die(api, token, dep_id)
+    bucket_url = (dep.get("links") or {}).get("bucket")
+    if not bucket_url:
+        die("Draft has no bucket link; cannot upload.")
+
+    # push artifacts (order: PDF, md, pandoc.md, html)
     for path in [final_pdf, final_md, final_pmd, final_html]:
         fname = path.name
-        # delete same-named file if present (drafts require delete->reupload)
-        delete_file_if_exists(api, token, dep_id, fname)
+        # Zenodo requires URL-escaped filename segment
+        from urllib.parse import quote
+        put_url = f"{bucket_url}/{quote(fname)}"
         with open(path, "rb") as fh:
-            try:
-                http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
-                        files={"file": (fname, fh)})
-            except SystemExit as e:
-                # Surface more context if a 403 happens again
-                echo(f"\nUpload failed for {fname}. Checking deposition state/files …")
-                dep = get_deposition(api, token, dep_id)
-                echo("state=" + str(dep.get("state")) + ", submitted=" + str(dep.get("submitted")))
-                echo("files=" + ", ".join((f.get('filename') or '?') for f in dep.get('files') or []))
-                raise
+            http_put_raw(put_url, token, fh)
+
+
+        print("sleeping 1")
+        time.sleep(1)
 
 
     _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
