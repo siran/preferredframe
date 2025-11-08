@@ -349,8 +349,9 @@ def _prepare_preprocessed(src: Path, omit_toc: bool, omit_numbering: bool) -> tu
     shift_args = ["--shift-heading-level-by", str(shift)] if shift != 0 else []
 
     reader = "markdown+tex_math_dollars+raw_tex"
-    toc_flag = [] if has_toc_marker else ["--toc"]
-    numbering_flag = ["--number-sections"]  # default on unless omitted upstream
+    # FIX: respect omit_toc and omit_numbering here
+    toc_flag = [] if (omit_toc or has_toc_marker) else ["--toc"]
+    numbering_flag = [] if omit_numbering else ["--number-sections"]
 
     return in_tmp, final_pandoc_md, meta_args, shift_args, (["--toc-depth=2"] + numbering_flag + toc_flag + ["-f", reader])
 
