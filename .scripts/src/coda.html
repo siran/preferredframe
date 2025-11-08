@@ -30,3 +30,21 @@
         white-space: normal;
     }
 </style>
+<script>
+    (function () {
+        try {
+            var html = document.body.innerHTML;
+            var i = html.indexOf('<meta');
+            var pre = i >= 0 ? html.slice(0, i) : html;
+
+            // Markdown links: allow spaces; trim
+            pre = pre.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
+                return '<a href="' + u.trim() + '">' + t + '</a>';
+            });
+
+            // Bare URLs → <a>; don't match inside ](URL)
+            pre = pre.replace(/(^|\s)((https?:\/\/[^\s)]+))/g, '$1<a href="$2">$2</a>');
+            document.body.innerHTML = pre + (i >= 0 ? html.slice(i) : '');
+        } catch (e) { }
+    })();
+</script>
