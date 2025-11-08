@@ -4,7 +4,7 @@ import os, subprocess, urllib.parse, shutil, re, json
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse, quote
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from zoneinfo import ZoneInfo
 import yaml
 
@@ -92,6 +92,7 @@ def write_cname_if_custom(base_url: str):
 
 # ---------- helpers ----------
 def rel(p: Path) -> Path: return p.relative_to(ROOT)
+def rel_out(p: Path) -> Path: return p.relative_to(OUT)
 def load_text(p: Path) -> str: return p.read_text(encoding="utf-8") if p.exists() else ""
 
 @dataclass
@@ -561,6 +562,62 @@ def copy_static():
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
+# ---------- sitemap & robots ----------
+def _url_from_out_path(p: Path) -> str:
+    """Map a file under OUT/ to its URL (canonical dir URL for index.html)."""
+    rp = rel_out(p).as_posix()
+    if rp == "index.html":
+        return f"{BASE_URL}/"
+    if rp.endswith("/index.html"):
+        return f"{BASE_URL}/" + rp[:-10]  # strip 'index.html'
+    # only include root-level html otherwise (e.g., submit.html)
+    if p.suffix.lower() == ".html" and p.parent == OUT:
+        return f"{BASE_URL}/" + rp
+    return ""  # ignore other files
+
+def build_sitemap_and_robots():
+    urls = []
+    for path in OUT.rglob("*.html"):
+        if path.name.startswith("."):
+            continue
+        loc = _url_from_out_path(path)
+        if not loc:
+            continue
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        lastmod = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
+        urls.append((loc, lastmod))
+
+    # de-dup while preserving lastmod of latest file seen
+    seen = {}
+    for loc, lastmod in urls:
+        if (loc not in seen) or (lastmod > seen[loc]):
+            seen[loc] = lastmod
+
+    items = []
+    for loc, lastmod in sorted(seen.items()):
+        items.append(
+            "  <url>\n"
+            f"    <loc>{loc}</loc>\n"
+            f"    <lastmod>{lastmod}</lastmod>\n"
+            "    <changefreq>weekly</changefreq>\n"
+            "    <priority>0.6</priority>\n"
+            "  </url>"
+        )
+
+    sitemap = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(items) + "\n</urlset>\n"
+    )
+    (OUT/"sitemap.xml").write_text(sitemap, encoding="utf-8")
+
+    robots = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        f"Sitemap: {BASE_URL}/sitemap.xml\n"
+    )
+    (OUT/"robots.txt").write_text(robots, encoding="utf-8")
+
 # ---------- build ----------
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
@@ -615,6 +672,9 @@ def main():
         write_md_like_page(out_html, md_body)
 
     copy_static()
+
+    # finally: sitemap + robots
+    build_sitemap_and_robots()
 
 if __name__ == "__main__":
     main()
