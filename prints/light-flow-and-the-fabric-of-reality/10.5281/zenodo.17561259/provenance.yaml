@@ -1,0 +1,45 @@
+journal: Preferred Frame
+source:
+  repo_origin: git@github.com:siran/writing.git
+  commit: 77a1af6669f3eca42108942165175f5bfd508a7a
+artifacts:
+  main: light-flow-and-the-fabric-of-reality.md
+  additional:
+    pandoc_md: light-flow-and-the-fabric-of-reality.pandoc.md
+    pdf: light-flow-and-the-fabric-of-reality.pdf
+    html: light-flow-and-the-fabric-of-reality.html
+parsed_from_pnpmd:
+  title: Light, Flow, and the Fabric of Reality
+  authors:
+  - name: Max Freet
+  - name: An M. Rodríguez
+    orcid: https://orcid.org/0009-0009-9098-9468
+  date: '2025-08-08'
+  one_sentence_summary: ''
+  abstract: 'A single scalar field replaces space and particles. Its vibrations generate
+    form, charge, mass, and orientation. From one scalar equation, source-free Maxwell
+    dynamics emerge without vector potentials or background geometry. The fundamental
+    mode has a self-inverting topology: inward flow becomes outward flow. On galactic
+    scales, the effective speed of light varies with local energy density, reproducing
+    observed dark-matter effects without unseen particles or free parameters. Space
+    appears as a stable recursion of the field, not a separate stage.'
+  keywords:
+  - scalar energy field
+  - emergent electromagnetism
+  - self-inverting topology
+  - variable light speed
+  - dark-matter
+  - dielectrics
+scanned:
+  authors_orcid: []
+  references_doi:
+  - https://doi.org/10.13140/RG.2.2.16877.91368
+  - https://doi.org/10.13140/RG.2.2.25895.66726
+  - https://doi.org/10.13140/RG.2.2.29880.25606
+zenodo:
+  doi: 10.5281/zenodo.17561259
+assets:
+  pdf: https://assets.preferredframe.com/preferredframe/light-flow-and-the-fabric-of-reality/10.5281/zenodo.17561259/light-flow-and-the-fabric-of-reality.pdf
+site:
+  permalink: https://preferredframe.com/prints/light-flow-and-the-fabric-of-reality/10.5281/zenodo.17561259/
+  html_canonical: https://preferredframe.com/prints/light-flow-and-the-fabric-of-reality/10.5281/zenodo.17561259/light-flow-and-the-fabric-of-reality.html
