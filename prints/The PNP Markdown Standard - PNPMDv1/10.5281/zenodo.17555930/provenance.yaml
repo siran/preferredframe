@@ -1,0 +1,38 @@
+journal: Preferred Frame
+source:
+  repo_origin: git@github.com:siran/research.git
+  commit: 8de9b1f2bafaffc48580cac85918506d63369158
+artifacts:
+  main: The PNP Markdown Standard - PNPMDv1.md
+  additional:
+    pdf: The PNP Markdown Standard - PNPMDv1.pdf
+    html: The PNP Markdown Standard - PNPMDv1.html
+    pandoc_md: The PNP Markdown Standard - PNPMDv1.pandoc.md
+parsed_from_pnpmd:
+  title: PNPMD Markdown specification — PNPMD v1.0.4
+  authors:
+    - name: Max Freet
+    - name: An M. Rodriguez
+    - name: Adrien Hale
+  date: 2025-11-02
+  one_sentence_summary: PNPMD is a specification for human-readable-*first*, plain-text, math-aware, markdown documents.
+  abstract: PNPMD is a specification for human-readable-*first*, plain-text, math-aware documents. PNPMD honors Pandoc's flavored markdown, rendered with pdflatex. Uses Pandoc's crossref filter (giving numbered and referenceable equations, figures, tables, etc), and adds some syntax sugar to ease cross-referencing and citations.
+  keywords:
+    - plain-text
+    - research format
+    - markdown
+    - mathjax
+    - pandoc
+    - PNPMD
+scanned:
+  authors_orcid:
+    - "https://orcid.org/0009-0009-9098-9468"
+  references_doi:
+[]
+zenodo:
+  doi: 10.5281/zenodo.17555930
+assets:
+  pdf: "https://assets.preferredframe.com/preferredframe/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17555930/The PNP Markdown Standard - PNPMDv1.pdf"
+site:
+  html_canonical: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17555930/The PNP Markdown Standard - PNPMDv1.html"
+  permalink: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17555930/"
