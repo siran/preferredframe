@@ -99,6 +99,7 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
     echo(f"+ HTTP {method.upper()} {url}")
     headers = {"Authorization": f"Bearer {token}"}
     if method.upper() in ("POST","PUT","PATCH"):
+        print(files)
         r = requests.request(method, url, headers=headers, json=data, files=files)
     else:
         r = requests.request(method, url, headers=headers, params=data)
@@ -413,6 +414,36 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
     prov_path.write_text(to_yaml(prov) + "\n", encoding="utf-8")
     return prov_path
 
+def get_deposition(api: str, token: str, dep_id: int) -> Dict:
+    return http_json("GET", f"{api}/deposit/depositions/{dep_id}", token)
+
+def list_files(api: str, token: str, dep_id: int) -> List[Dict]:
+    dep = get_deposition(api, token, dep_id)
+    return dep.get("files") or []
+
+def delete_file_if_exists(api: str, token: str, dep_id: int, filename: str):
+    files = list_files(api, token, dep_id)
+    for f in files:
+        if (f.get("filename") or "") == filename:
+            file_id = f.get("id")
+            if file_id:
+                echo(f"+ DELETE existing file on Zenodo: {filename} (id={file_id})")
+                http_json("DELETE", f"{api}/deposit/depositions/{dep_id}/files/{file_id}", token)
+            break
+
+def ensure_draft_or_die(api: str, token: str, dep_id: int):
+    dep = get_deposition(api, token, dep_id)
+    # Zenodo returns e.g. "state": "inprogress" for drafts. Published records
+    # have "submitted": True or links without the /files endpoint.
+    state = dep.get("state") or ""
+    submitted = dep.get("submitted")
+    links = dep.get("links") or {}
+    can_upload = ("files" in links) and (submitted in (False, None)) and (state in ("inprogress", "", None))
+    if not can_upload:
+        echo(f"\nZenodo deposition {dep_id} is not modifiable:")
+        echo(f"  state={state!r}, submitted={submitted!r}, links/files={'files' in links}")
+        die("Cannot upload files to a non-draft deposition. Create a new version or keep this record as-is.")
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="Publish a Preferred Frame print (PNPMD).")
@@ -474,7 +505,8 @@ def main():
     if "/" in doi:
         doi_prefix, doi_suffix = doi.split("/", 1)
     else:
-        doi_prefix, doi_suffix = "10.xxxx", (doi or "x")
+        die("no / in reserved DOI?")
+        # doi_prefix, doi_suffix = "10.xxxx", (doi or "x")
     final_dir = site_repo / "prints" / stem / doi_prefix / doi_suffix
     final_dir.mkdir(parents=True, exist_ok=True)
 
@@ -545,7 +577,7 @@ def main():
         shutil.copy2(final_pdf, dest)
         if not args.no_assets_push:
             run(["git", "add", "-A"], cwd=assets_repo)
-            run(["git", "commit", "-m", f"Add PDF for {title} ({publication_date})"], cwd=assets_repo)
+            run(["git", "commit", "-m", f"{title}.pdf ({publication_date}, {doi})"], cwd=assets_repo)
             run(["git", "push"], cwd=assets_repo)
 
     # ---- rebuild FULL metadata (same as reservation) + final related_identifiers ----
@@ -571,11 +603,24 @@ def main():
     }
     _ = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": full_meta})
 
-    # ---- upload to Zenodo & publish ----
+    # ---- upload to Zenodo (idempotent) & publish ----
+    ensure_draft_or_die(api, token, dep_id)
     for path in [final_pdf, final_md, final_pmd, final_html]:
+        fname = path.name
+        # delete same-named file if present (drafts require delete->reupload)
+        delete_file_if_exists(api, token, dep_id, fname)
         with open(path, "rb") as fh:
-            http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
-                      files={"file": (path.name, fh)})
+            try:
+                http_json("POST", f"{api}/deposit/depositions/{dep_id}/files", token,
+                        files={"file": (fname, fh)})
+            except SystemExit as e:
+                # Surface more context if a 403 happens again
+                echo(f"\nUpload failed for {fname}. Checking deposition state/files …")
+                dep = get_deposition(api, token, dep_id)
+                echo("state=" + str(dep.get("state")) + ", submitted=" + str(dep.get("submitted")))
+                echo("files=" + ", ".join((f.get('filename') or '?') for f in dep.get('files') or []))
+                raise
+
 
     _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
 
