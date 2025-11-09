@@ -2,23 +2,45 @@ name: Deploy site
 on:
   push: { branches: [ main ] }
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: "pages"
   cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install PyYAML feedgen
+          fi
+
       - name: Build site
+        env:
+          BASE_URL: "https://preferredframe.com"
         run: python .scripts/build_site.py
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
-        with: { path: site }
+        with:
+          path: site
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

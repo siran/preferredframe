@@ -7,6 +7,7 @@ from urllib.parse import urlparse, quote
 from datetime import datetime, date, timezone
 from zoneinfo import ZoneInfo
 import yaml
+from feedgen.feed import FeedGenerator
 
 # ---------- config ----------
 EXCLUDE_NAMES = {
@@ -101,6 +102,28 @@ class Item:
     is_dir: bool
     mtime: float
     path: Path
+
+def _canonical_origin_from_provenance() -> str | None:
+    """Infer https://preferredframe.com from provenance.site.permalink/html_canonical."""
+    try:
+        prints_dir = ROOT / "prints"
+        if not prints_dir.exists():
+            return None
+        for prov in prints_dir.glob("*/*/*/provenance.yaml"):
+            try:
+                data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
+                site_block = data.get("site") or {}
+                for key in ("permalink", "html_canonical"):
+                    u = site_block.get(key) or ""
+                    if u.startswith("http"):
+                        p = urlparse(u)
+                        if p.scheme and p.netloc:
+                            return f"{p.scheme}://{p.netloc}"
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
 
 # ---------- templating ----------
 def write_html(out_html: Path, body_html: str, head_extra: str = ""):
@@ -654,10 +677,96 @@ def build_sitemap_and_robots():
         "Allow: /index.html\n"
         "Allow: /sitemap.xml\n"
         "Allow: /robots.txt\n"
+        "Allow: /rss.xml\n"
         f"Sitemap: {origin}/sitemap.xml\n"
     )
     (OUT / "robots.txt").write_text(robots, encoding="utf-8")
 
+def build_rss_feed():
+    """
+    Produce /rss.xml with one item per STEM (latest version).
+    Uses provenance for titles/authors/dates/abstract and canonical URLs.
+    """
+    origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
+
+    # collect latest per stem
+    prints = ROOT / "prints"
+    if not prints.exists():
+        return
+
+    # scan provenance
+    by_stem = {}
+    for prov in prints.glob("*/*/*/provenance.yaml"):
+        try:
+            data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+
+        stem = prov.parent.parent.parent.name
+        pf = data.get("parsed_from_pnpmd") or {}
+        title   = pf.get("title") or stem
+        authors = normalize_authors(pf.get("authors"))
+        abstract= pf.get("abstract") or ""
+        date_norm = pf.get("date") or None
+        zenodo  = data.get("zenodo") or {}
+        doi     = zenodo.get("doi") or ""
+
+        # canonical URLs
+        site_block = data.get("site") or {}
+        permalink = site_block.get("permalink")  # preferred if present
+        if permalink and permalink.startswith("http"):
+            item_url = permalink.rstrip("/")
+        else:
+            # default to stem page
+            item_url = f"{origin}/prints/{stem}/"
+
+        # choose latest by date (fallback to mtime of provenance)
+        dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
+        keep = by_stem.get(stem)
+        if not keep or dt > keep["dt"]:
+            by_stem[stem] = {
+                "stem": stem,
+                "title": title,
+                "authors": authors,
+                "abstract": abstract,
+                "date": dt,
+                "url": item_url,
+                "doi": doi,
+            }
+
+    # build feed
+    fg = FeedGenerator()
+    fg.load_extension('podcast')  # harmless; ensures proper namespaces if needed
+    fg.title('Preferred Frame — Publications')
+    fg.link(href=origin+'/', rel='alternate')
+    fg.link(href=origin+'/rss.xml', rel='self')
+    fg.description('Latest publications from Preferred Frame')
+    fg.language('en')
+
+    # items sorted newest first
+    items = sorted(by_stem.values(), key=lambda x: x["date"], reverse=True)
+    for it in items:
+        fe = fg.add_entry()
+        fe.id(it["url"])
+        fe.link(href=it["url"])
+        fe.title(it["title"])
+        if it["abstract"]:
+            fe.description(it["abstract"])
+        # author list
+        for a in it["authors"]:
+            nm = a.get("name","").strip()
+            if nm:
+                fe.author({'name': nm})
+        # pubDate
+        # RFC-2822 via feedgen expects datetime with tz; use UTC
+        fe.pubDate(it["date"].astimezone(timezone.utc))
+
+        # add DOI as an extra link if present
+        if it["doi"]:
+            fe.link(href=f'https://doi.org/{it["doi"].split("/")[-1]}', rel='related')
+
+    rss_xml = fg.rss_str(pretty=True).decode('utf-8')
+    (OUT / 'rss.xml').write_text(rss_xml, encoding='utf-8')
 
 # ---------- build ----------
 def main():
@@ -716,6 +825,9 @@ def main():
 
     # finally: sitemap + robots
     build_sitemap_and_robots()
+
+    # finally: RSS
+    build_rss_feed()
 
 if __name__ == "__main__":
     main()
