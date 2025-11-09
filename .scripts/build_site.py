@@ -651,6 +651,7 @@ def build_sitemap_and_robots():
         "User-agent: *\n"
         "Disallow: /\n"
         "Allow: /prints/\n"
+        "Allow: /index.html\n"
         "Allow: /sitemap.xml\n"
         "Allow: /robots.txt\n"
         f"Sitemap: {origin}/sitemap.xml\n"
