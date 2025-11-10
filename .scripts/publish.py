@@ -664,22 +664,30 @@ def main():
         {"relation": "isIdenticalTo", "identifier": site_md_url,    "resource_type": "publication"},
         {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
     ]
+
     full_meta = {
         "upload_type": "publication",
         "publication_type": "article",
-        "title": title,
-        "creators": creators or [{"name": "Unknown"}],
-        "description": parsed["abstract"] or "No description provided.",
-        "notes": parsed["one_sentence"] or "",
-        "keywords": parsed["keywords"] or [],
-        "journal_title": args.journal,
-        "publication_date": publication_date,
-        "license": "CC-BY-4.0",
-        "related_identifiers": final_related,
-        "communities": [{"identifier": args.community}],
-        "prereserve_doi": True
+        "title":                       title,
+        "creators":                    creators,
+        "description":                 normalize_markdown_prose(parsed["abstract"] or ""),
+        "notes":                       normalize_markdown_prose(parsed["one_sentence"] or ""),
+        "keywords":                    parsed["keywords"],
+        "journal_title":               args.journal,
+        "publication_date":            publication_date,
+        "license":                     "cc-by-4.0",
+        "related_identifiers":         final_related,
+        "communities":                 [{"identifier": args.community}],
+        "prereserve_doi":              True,
     }
-    _ = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": full_meta})
+
+    _ = http_json(
+        "PUT",
+        f"{api}/deposit/depositions/{dep_id}",
+        token,
+        data={"metadata": full_meta}
+    )
+
 
     # ---- upload to Zenodo via bucket (overwrites by name) & publish ----
     dep = ensure_draft_or_die(api, token, dep_id)
