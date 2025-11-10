@@ -447,6 +447,8 @@ def main(argv=None):
     g.add_argument("--all",action="store_true", help="Render both PDF and HTML (default).")
     args=ap.parse_args(argv)
 
+    args.omit_toc = True # always omit TOC
+
     try:
         make_pdf = True; make_html = True
         if args.pdf:  make_html = False

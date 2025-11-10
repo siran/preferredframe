@@ -77,20 +77,16 @@ def git_origin_url(repo: Path) -> str:
 def zenodo_api_and_token(env: str) -> Tuple[str, str]:
     """
     Resolve Zenodo API base + token from the selected environment.
-    - sandbox: requires ZENODO_SANDBOX_TOKEN (uses ZENODO_SANDBOX_API or default sandbox URL)
-    - prod   : requires ZENODO_TOKEN        (uses ZENODO_API or default prod URL)
+    - requires ZENODO_TOKEN, ZENODO_API
     """
-    if env == "prod":
-        token = os.environ.get("ZENODO_TOKEN")
-        if not token:
-            die("Missing ZENODO_TOKEN for --env prod.")
-        api = os.environ.get("ZENODO_API", "https://zenodo.org/api")
-        return api, token
-    # sandbox (default)
-    token = os.environ.get("ZENODO_SANDBOX_TOKEN")
+    token = os.environ.get("ZENODO_TOKEN")
     if not token:
-        die("Missing ZENODO_SANDBOX_TOKEN for --env sandbox.")
+        die("Missing ZENODO_TOKEN for --env prod.")
+
     api = os.environ.get("ZENODO_SANDBOX_API", "https://sandbox.zenodo.org/api")
+    if env == "prod":
+        api = os.environ.get("ZENODO_API", "https://zenodo.org/api")
+
     return api, token
 
 def http_put_raw(url: str, token: str, fp):
