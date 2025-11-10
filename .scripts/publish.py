@@ -25,6 +25,7 @@ import traceback
 from typing import List, Optional, Dict, Tuple
 from datetime import date, datetime
 import yaml
+from markdown_it import MarkdownIt
 
 # ---------------- util ----------------
 
@@ -150,7 +151,21 @@ def section_text(md: str, name: str) -> str:
     return md[start:end].strip()
 
 def parse_pnpmd(md_text: str) -> Dict:
-    lines = md_text.splitlines()
+    """
+    Parse PNPMD using markdown-it-py for robust section extraction.
+    Header lines:
+      % Title
+      % Author(s)
+      % Date
+    Sections used:
+      ## One-Sentence Summary
+      ## Abstract
+      ## Keywords        (first non-empty line; comma-separated)
+      ## About Author(s) (list items: name, optional orcid/email)
+    Also scans ORCIDs and DOIs anywhere in the document.
+    """
+    # --- percent header (Pandoc-style) ---
+    lines = md_text.replace("\r\n", "\n").splitlines()
     head = []
     for i in range(min(3, len(lines))):
         if lines[i].lstrip().startswith("%"):
@@ -166,24 +181,70 @@ def parse_pnpmd(md_text: str) -> Dict:
         parts = re.split(r'\band\b|,', raw_authors_line)
         header_authors = [p.strip() for p in parts if p.strip()]
 
-    one_sentence = section_text(md_text, "One-Sentence Summary")
-    abstract = section_text(md_text, "Abstract")
-    kb = section_text(md_text, "Keywords")
+    # strip header from body for section parsing
+    body_start = len(head)
+    md_body = "\n".join(lines[body_start:])
+
+    # --- parse sections with markdown-it ---
+    md = MarkdownIt("commonmark")
+    tokens = md.parse(md_body)
+
+    def collect_sections(tok_list) -> Dict[str, str]:
+        sections = {}
+        i = 0
+        while i < len(tok_list):
+            t = tok_list[i]
+            if t.type == "heading_open" and t.tag in {"h2", "h3", "h4", "h5", "h6"}:
+                # next token should be inline with the heading text
+                if i + 1 < len(tok_list) and tok_list[i + 1].type == "inline":
+                    sec_title = tok_list[i + 1].content.strip()
+                    # gather content until next heading_open of same or higher level
+                    level = int(t.tag[1])
+                    j = i + 2
+                    buf = []
+                    while j < len(tok_list):
+                        tt = tok_list[j]
+                        if tt.type == "heading_open" and int(tt.tag[1]) <= level:
+                            break
+                        buf.append(tt.map and "\n".join(lines[tt.map[0]+body_start:tt.map[1]+body_start]) if tt.map else tt.content)
+                        j += 1
+                    sections[sec_title] = "\n".join(x for x in buf if x is not None).strip()
+                    i = j
+                    continue
+            i += 1
+        return sections
+
+    secs = collect_sections(tokens)
+
+    def get_sec(name: str) -> str:
+        for k, v in secs.items():
+            if k.strip().lower() == name.strip().lower():
+                return v or ""
+        return ""
+
+    one_sentence = get_sec("One-Sentence Summary")
+    abstract     = get_sec("Abstract")
+    kb           = get_sec("Keywords")
+    about        = get_sec("About Author(s)")
+
+    # --- keywords: first non-empty line, comma-separated ---
     keywords = []
     if kb:
         first_line = next((ln.strip() for ln in kb.splitlines() if ln.strip()), "")
         if first_line:
             keywords = [k.strip() for k in first_line.split(",") if k.strip()]
 
-    about = section_text(md_text, "About Author(s)")
+    # --- authors (About Author(s)): bullet list lines "* " / "- " ---
     parsed_authors = []
     for ln in about.splitlines():
         m = re.match(r'^\s*[\*\-]\s+(.*)$', ln)
-        if not m: continue
+        if not m:
+            continue
         body = m.group(1).strip()
         parts = [p.strip() for p in body.split(",")]
         name = parts[0] if parts else ""
-        orcid = None; email = None
+        orcid = None
+        email = None
         for p in parts[1:]:
             if "orcid.org" in p or ORCID_ID_RE.search(p):
                 oid = ORCID_URL_RE.search(p)
@@ -199,8 +260,14 @@ def parse_pnpmd(md_text: str) -> Dict:
     if not parsed_authors and header_authors:
         parsed_authors = [{"name": nm} for nm in header_authors]
 
-    found_orcids = sorted({normalize_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(md_text)} |
-                          {normalize_orcid(m.group(1)) for m in ORCID_ID_RE.finditer(md_text)} - {None})
+    # --- scans ---
+    found_orcids = sorted({
+        o for o in (
+            [normalize_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(md_text)] +
+            [normalize_orcid(m.group(1)) for m in ORCID_ID_RE.finditer(md_text)]
+        ) if o
+    })
+
     dois = set(DOI_RE.findall(md_text))
     doi_urls = sorted({"https://doi.org/" + d.rstrip('.,);:]') for d in dois})
 
@@ -208,8 +275,8 @@ def parse_pnpmd(md_text: str) -> Dict:
         "title": title,
         "authors": parsed_authors,
         "date": pub_date,
-        "one_sentence": one_sentence.strip(),
-        "abstract": abstract.strip(),
+        "one_sentence": (one_sentence or "").strip(),
+        "abstract": (abstract or "").strip(),
         "keywords": keywords,
         "scanned_orcids": found_orcids,
         "reference_doi_urls": doi_urls
@@ -309,6 +376,19 @@ def reserve_deposition(api: str, token: str,
     concept_doi = pr.get("conceptdoi") or None  # may be missing in sandbox or certain flows
     return dep_id, reserved_doi, concept_doi
 
+def dump_yaml(obj) -> str:
+    """
+    Serialize to YAML with stable, human-friendly formatting.
+    """
+    return yaml.safe_dump(
+        obj,
+        sort_keys=False,
+        allow_unicode=True,
+        width=1000,           # keep long URLs on one line
+        default_flow_style=False
+    )
+
+
 def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path, dst_pmd: Path,
                      src_origin: str, src_commit: str,
                      title: str, creators: List[Dict], parsed: Dict,
@@ -357,14 +437,7 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
 
     prov_path = dst_dir / "provenance.yaml"
     echo(f"+ write {prov_path}")
-    with open(prov_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(
-            prov,
-            f,
-            sort_keys=False,          # keep logical key order
-            allow_unicode=True,       # emit non-ASCII cleanly
-            default_flow_style=False  # block style (readable)
-        )
+    prov_path.write_text(dump_yaml(prov), encoding="utf-8")
     return prov_path
 
 def get_deposition(api: str, token: str, dep_id: int) -> Dict:
