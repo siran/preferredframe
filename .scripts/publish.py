@@ -27,6 +27,30 @@ from datetime import date, datetime
 import yaml
 from markdown_it import MarkdownIt
 
+
+
+#### to quote URLs with special characters using PyYaml ####
+# characters that tend to confuse parsers if left unquoted in URLs
+_URL_UNSAFE_CHARS = set(" \t()[]{}<>|\"'")
+
+class PFYamlDumper(yaml.SafeDumper):
+    pass
+
+
+def _needs_double_quotes_for_url(s: str) -> bool:
+    if "://" not in s:
+        return False
+    # quote if any unsafe char appears
+    return any(c in _URL_UNSAFE_CHARS for c in s)
+
+def _pf_represent_str(dumper: yaml.Dumper, data: str):
+    # feed raw string to PyYAML; only set style for specific cases
+    style = '"' if _needs_double_quotes_for_url(data) else None
+    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style=style)
+
+PFYamlDumper.add_representer(str, _pf_represent_str)
+
+
 # ---------------- util ----------------
 
 def echo(msg: str):
@@ -149,6 +173,36 @@ def section_text(md: str, name: str) -> str:
     m2 = re.search(r'^\s*##\s+.+?$', md[start:], re.M)
     end = start + (m2.start() if m2 else len(md) - start)
     return md[start:end].strip()
+
+def normalize_markdown_prose(md: str) -> str:
+    """
+    Convert markdown prose to a single string without hard-wrapped newlines.
+    - Single newlines inside a paragraph → space
+    - Blank lines (paragraph breaks) preserved
+    """
+    if not md:
+        return ""
+
+    lines = md.replace("\r\n", "\n").split("\n")
+    out = []
+    buf = []
+
+    def flush_buf():
+        if buf:
+            # join wrapped lines into a single paragraph
+            out.append(" ".join(x.strip() for x in buf if x.strip()))
+            buf.clear()
+
+    for line in lines:
+        if not line.strip():  # blank line → paragraph break
+            flush_buf()
+            out.append("")  # represent blank paragraph
+        else:
+            buf.append(line)
+    flush_buf()
+
+    # rejoin paragraphs with a blank line between them
+    return "\n\n".join(out).strip()
 
 def parse_pnpmd(md_text: str) -> Dict:
     """
@@ -377,15 +431,13 @@ def reserve_deposition(api: str, token: str,
     return dep_id, reserved_doi, concept_doi
 
 def dump_yaml(obj) -> str:
-    """
-    Serialize to YAML with stable, human-friendly formatting.
-    """
-    return yaml.safe_dump(
+    return yaml.dump(
         obj,
+        Dumper=PFYamlDumper,   # our custom SafeDumper subclass
         sort_keys=False,
         allow_unicode=True,
-        width=1000,           # keep long URLs on one line
-        default_flow_style=False
+        width=1000,
+        default_flow_style=False,
     )
 
 
@@ -412,9 +464,9 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
         "parsed_from_pnpmd": {
             "title": title,
             "authors": creators,
-            "date": publication_date,  # normalized yyyy-mm-dd
-            "one_sentence_summary": parsed["one_sentence"],
-            "abstract": parsed["abstract"],
+            "date": publication_date,
+            "one_sentence_summary": normalize_markdown_prose(parsed["one_sentence"]),
+            "abstract": normalize_markdown_prose(parsed["abstract"]),
             "keywords": parsed["keywords"]
         },
         "scanned": {
