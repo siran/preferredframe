@@ -24,6 +24,7 @@ import time
 import traceback
 from typing import List, Optional, Dict, Tuple
 from datetime import date, datetime
+import yaml
 
 # ---------------- util ----------------
 
@@ -240,76 +241,6 @@ def normalize_pub_date(pnpmd_date: Optional[str]) -> str:
             return f"{dt.year:04d}-{dt.month:02d}-{day:02d}"
     t = date.today(); return t.strftime("%Y-%m-%d")
 
-# ---- YAML (compact, minimal quoting) ----
-
-def yaml_str(v: str) -> str:
-    if v is None:
-        return "null"
-    if not isinstance(v, str):
-        return str(v)
-    s = v
-    # Quote only when necessary:
-    # - multiline or trimmed
-    # - URL-like (:// or mailto:)
-    # - contains spaces in a link-ish string (has '/' or ':')
-    # - has query/fragment/special URL chars ( ? & # % = )
-    needs_quotes = (
-        ("\n" in s) or
-        (s.strip() != s) or
-        ("://" in s) or
-        (s.startswith("mailto:")) or
-        (" " in s and ("/" in s or ":" in s)) or
-        (any(ch in s for ch in ("?","&","#","%","=")))
-    )
-    if needs_quotes:
-        esc = s.replace("\\","\\\\").replace('"','\\"')
-        return f"\"{esc}\""
-    return s
-
-def to_yaml(obj, indent=0):
-    sp = "  " * indent
-    if obj is None: return "null"
-    if isinstance(obj, bool): return "true" if obj else "false"
-    if isinstance(obj, (int, float)): return str(obj)
-    if isinstance(obj, str): return yaml_str(obj)
-    if isinstance(obj, list):
-        if not obj: return "[]"
-        lines=[]
-        for it in obj:
-            if isinstance(it, dict):
-                first = True
-                for k, v in it.items():
-                    if first:
-                        if isinstance(v, (dict, list)):
-                            lines.append(f"{sp}- {k}:")
-                            sub = to_yaml(v, indent+2)
-                            lines.append(sub)
-                        else:
-                            lines.append(f"{sp}- {k}: {to_yaml(v, indent+1)}")
-                        first = False
-                    else:
-                        if isinstance(v, (dict, list)):
-                            lines.append(f"{sp}  {k}:")
-                            sub = to_yaml(v, indent+2)
-                            lines.append(sub)
-                        else:
-                            lines.append(f"{sp}  {k}: {to_yaml(v, indent+1)}")
-                continue
-            val = to_yaml(it, indent+1)
-            lines.append(f"{sp}- {val}")
-        return "\n".join(lines)
-    if isinstance(obj, dict):
-        if not obj: return "{}"
-        lines=[]
-        for k,v in obj.items():
-            key = str(k)
-            if isinstance(v, (dict, list)):
-                lines.append(f"{sp}{key}:")
-                lines.append(to_yaml(v, indent+1))
-            else:
-                lines.append(f"{sp}{key}: {to_yaml(v, indent+1)}")
-        return "\n".join(lines)
-    return yaml_str(str(obj))
 
 # ---------------- steps ----------------
 
@@ -426,7 +357,14 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
 
     prov_path = dst_dir / "provenance.yaml"
     echo(f"+ write {prov_path}")
-    prov_path.write_text(to_yaml(prov) + "\n", encoding="utf-8")
+    with open(prov_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            prov,
+            f,
+            sort_keys=False,          # keep logical key order
+            allow_unicode=True,       # emit non-ASCII cleanly
+            default_flow_style=False  # block style (readable)
+        )
     return prov_path
 
 def get_deposition(api: str, token: str, dep_id: int) -> Dict:
