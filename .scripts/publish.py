@@ -167,8 +167,21 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
 # ---------------- PNPMD parsing & scans ----------------
 
 DOI_RE = re.compile(r'\b10\.\d{4,9}/\S+\b')
-ORCID_URL_RE = re.compile(r'https?://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
-ORCID_ID_RE  = re.compile(r'\b(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b')
+ORCID_ID_RE  = re.compile(r'\b(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
+ORCID_URL_RE = re.compile(r'\bhttps?://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
+
+def _orcid_parts(s: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Returns (bare_id, canonical_url) if an ORCID is found anywhere in s,
+    else (None, None). Bare id is what's expected by Zenodo's metadata.
+    """
+    if not s:
+        return None, None
+    m = ORCID_URL_RE.search(s) or ORCID_ID_RE.search(s)
+    if not m:
+        return None, None
+    bare = m.group(1)
+    return bare, f"https://orcid.org/{bare}"
 
 def normalize_orcid(s: str) -> Optional[str]:
     s = s.strip()
@@ -244,6 +257,55 @@ def replace_header_date(md_text: str, new_date_iso: str) -> str:
     return "\n".join(out)
 
 
+import re
+from typing import Dict, List
+from markdown_it import MarkdownIt
+
+# --- regex helpers ---
+EMAIL_RE = re.compile(r'(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b')
+# ORCID ID = 16 chars grouped 4-4-4-3 + checksum char (0-9X)
+ORCID_ID_RE  = re.compile(r'\b(0000-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
+ORCID_URL_RE = re.compile(r'\bhttps?://orcid\.org/(0000-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
+
+DOI_RE = re.compile(r'\b10\.\d{4,9}/[^\s"<>]+', re.I)
+
+def normalize_orcid(raw: str) -> str:
+    """Return uppercase checksum and normalized hyphenation for an ORCID id."""
+    if not raw:
+        return ""
+    oid = raw.upper()
+    # ensure hyphenated blocks 4-4-4-3+1
+    oid = oid.replace(" ", "").replace("/", "").replace("ORCID.ORG", "")
+    # if it's already hyphenated correctly, keep it
+    m = ORCID_ID_RE.search(oid)
+    return m.group(1) if m else ""
+
+def _orcid_parts(text: str):
+    """Find first ORCID in text; return (id, url) normalized/canonical if any."""
+    m_url = ORCID_URL_RE.search(text)
+    if m_url:
+        oid = normalize_orcid(m_url.group(1))
+        return (oid, f"https://orcid.org/{oid}") if oid else (None, None)
+    m_id = ORCID_ID_RE.search(text)
+    if m_id:
+        oid = normalize_orcid(m_id.group(1))
+        return (oid, f"https://orcid.org/{oid}") if oid else (None, None)
+    return (None, None)
+
+def _split_header_authors(raw_line: str) -> List[str]:
+    """
+    Split the 2nd header line into author names.
+    Respect the spec: it's a simple list of names.
+    We split on commas or the word 'and' when used as a separator.
+    """
+    # Replace ' and ' with comma to unify
+    s = re.sub(r'\band\b', ',', raw_line, flags=re.I)
+    # Now split on commas and strip
+    parts = [p.strip() for p in s.split(',')]
+    # Drop empties
+    parts = [p for p in parts if p]
+    return parts
+
 def parse_pnpmd(md_text: str) -> Dict:
     """
     Parse PNPMD using markdown-it-py for robust section extraction.
@@ -270,10 +332,13 @@ def parse_pnpmd(md_text: str) -> Dict:
     raw_authors_line = head[1] if len(head) >= 2 else ""
     pub_date = head[2] if len(head) >= 3 else ""
 
+    # Split authors from the 2nd line: commas and standalone "and"
+    # Avoid empty fragments; strip spaces.
     header_authors = []
     if raw_authors_line:
-        parts = re.split(r'\band\b|,', raw_authors_line)
-        header_authors = [p.strip() for p in parts if p.strip()]
+        # Replace " and " with comma, then split on commas
+        tmp = re.sub(r'\s+\band\b\s+', ',', raw_authors_line)
+        header_authors = [a.strip() for a in tmp.split(",") if a.strip()]
 
     # strip header from body for section parsing
     body_start = len(head)
@@ -289,10 +354,8 @@ def parse_pnpmd(md_text: str) -> Dict:
         while i < len(tok_list):
             t = tok_list[i]
             if t.type == "heading_open" and t.tag in {"h2", "h3", "h4", "h5", "h6"}:
-                # next token should be inline with the heading text
                 if i + 1 < len(tok_list) and tok_list[i + 1].type == "inline":
                     sec_title = tok_list[i + 1].content.strip()
-                    # gather content until next heading_open of same or higher level
                     level = int(t.tag[1])
                     j = i + 2
                     buf = []
@@ -328,48 +391,85 @@ def parse_pnpmd(md_text: str) -> Dict:
         if first_line:
             keywords = [k.strip() for k in first_line.split(",") if k.strip()]
 
-    # --- authors (About Author(s)): robust bullets with inline or next-part ORCID/email ---
-    parsed_authors = []
-    for raw in about.splitlines():
-        m = re.match(r'^\s*[\*\-]\s+(.*)$', raw)
-        if not m:
-            continue
-        body = m.group(1).strip()
+    # ---------- Author parsing helpers ----------
+    def _normalize_name(name: str) -> str:
+        # Lowercase, collapse spaces, strip punctuation except period (keeps initials)
+        base = re.sub(r"[^\w.\s]", "", name.lower())
+        return re.sub(r"\s+", " ", base).strip()
 
-        # Split by commas but keep parentheses content; typical forms:
-        # "Jane Doe, https://orcid.org/0000-0000-0000-0000, jane@x.com"
-        # "John Roe (ORCID: 0000-0000-0000-0000), john@x.com"
-        parts = [p.strip() for p in re.split(r',(?![^()]*\))', body) if p.strip()]
-        name = parts[0] if parts else ""
+    def _extract_email(text: str) -> Optional[str]:
+        m = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text)
+        return m.group(0) if m else None
 
-        orcid = None
-        email = None
+    def _extract_orcid(text: str) -> Tuple[Optional[str], Optional[str]]:
+        # Prefer URL if present; otherwise bare ID
+        murl = ORCID_URL_RE.search(text)
+        mid  = ORCID_ID_RE.search(text)
+        if murl:
+            oid = normalize_orcid(murl.group(1))
+            return oid, f"https://orcid.org/{oid}" if oid else None
+        if mid:
+            oid = normalize_orcid(mid.group(1))
+            return oid, f"https://orcid.org/{oid}" if oid else None
+        return None, None
 
-        # Scan entire bullet text for ORCID first (URL or bare ID)
-        mo_url = ORCID_URL_RE.search(body)
-        mo_id  = ORCID_ID_RE.search(body)
-        if mo_url:
-            orcid = normalize_orcid(mo_url.group(1))
-        elif mo_id:
-            orcid = normalize_orcid(mo_id.group(1))
+    # ---------- Parse About Author(s) lines ----------
+    about_authors: Dict[str, Dict[str, str]] = {}
+    if about:
+        for raw in about.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # Accept bullet "* " or "- " or bare line
+            m = re.match(r'^[\*\-\u2022]\s+(.*)$', line)
+            body = m.group(1).strip() if m else line
 
-        # Email: look in trailing parts
-        for p in parts[1:]:
-            if "@" in p and not email:
-                email = p
+            # Split by commas NOT inside parentheses
+            parts = [p.strip() for p in re.split(r',(?![^()]*\))', body) if p.strip()]
+            if not parts:
+                continue
 
-        if name:
+            name = parts[0]
+            email = _extract_email(body)
+            orcid_id, orcid_url = _extract_orcid(body)
+
             entry = {"name": name}
-            if orcid: entry["orcid"] = orcid
-            if email: entry["email"] = email
-            parsed_authors.append(entry)
+            if email:
+                entry["email"] = email
+            if orcid_id:
+                entry["orcid"] = orcid_id
+            if orcid_url:
+                entry["orcid_url"] = orcid_url
 
-    # fallback: use % header authors if About Author(s) empty
-    if not parsed_authors and header_authors:
-        parsed_authors = [{"name": nm} for nm in header_authors]
+            about_authors[_normalize_name(name)] = entry
 
+    # ---------- Merge: start from header order, enrich from About ----------
+    merged: List[Dict[str, str]] = []
+    seen_keys = set()
 
-    # --- scans ---
+    for nm in header_authors:
+        key = _normalize_name(nm)
+        base = {"name": nm}
+        if key in about_authors:
+            # enrich while preserving header display name
+            enriched = dict(about_authors[key])
+            enriched["name"] = nm
+            merged.append(enriched)
+            seen_keys.add(key)
+        else:
+            merged.append(base)
+            seen_keys.add(key)
+
+    # Append About-only authors not present in header
+    for key, entry in about_authors.items():
+        if key not in seen_keys:
+            merged.append(entry)
+
+    # ---------- Fallback: if no authors parsed at all ----------
+    if not merged and raw_authors_line:
+        merged = [{"name": nm} for nm in header_authors]
+
+    # --- scans (global) ---
     found_orcids = sorted({
         o for o in (
             [normalize_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(md_text)] +
@@ -380,19 +480,24 @@ def parse_pnpmd(md_text: str) -> Dict:
     dois = set(DOI_RE.findall(md_text))
     doi_urls = sorted({"https://doi.org/" + d.rstrip('.,);:]') for d in dois})
 
+    # Ensure at least one ORCID appears inside authors if any ORCID is found globally
+    if found_orcids and all("orcid" not in a for a in merged):
+        # Assign the first found ORCID to the first author (best-effort fallback)
+        merged[0]["orcid"] = found_orcids[0]
+        merged[0]["orcid_url"] = f"https://orcid.org/{found_orcids[0]}"
+
     return {
         "title": title,
-        "authors": parsed_authors,
+        "authors": merged,
         "date": pub_date,
-        "one_sentence": one_sentence.strip(),
-        "abstract": abstract.strip(),
+        "one_sentence": (one_sentence or "").strip(),
+        "abstract": (abstract or "").strip(),
         "keywords": keywords,
         "scanned_orcids": found_orcids,
         "reference_doi_urls": doi_urls
     }
 
 # ---- date normalization ----
-
 MONTHS = {m.lower(): i for i, m in enumerate(
     ["January","February","March","April","May","June","July","August","September","October","November","December"], 1)}
 
@@ -517,7 +622,7 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
         "keywords": parsed["keywords"],
         "one_sentence_summary": normalize_markdown_prose(parsed["one_sentence"]),
         "abstract": normalize_markdown_prose(parsed["abstract"]),
-        "authors": creators,  # includes per-author ORCID/email when present
+        "authors": creators,
         "references_doi": parsed["reference_doi_urls"],
         "source": {
             "repo_origin": src_origin,
@@ -607,14 +712,17 @@ def main():
 
     # ---- parse PNPMD & normalized date ----
     parsed = parse_pnpmd(staged_md.read_text(encoding="utf-8"))
+    creators = []
+    for a in parsed["authors"]:
+        if not a.get("name"):
+            continue
+        creators.append({
+            "name": a["name"],
+            **({"orcid": a["orcid"]} if a.get("orcid") else {}),
+            **({"email": a["email"]} if a.get("email") else {}),
+        })
     title = parsed["title"]
-    creators = [
-        {"name": a.get("name",""),
-        **({"orcid": a["orcid"]} if a.get("orcid") else {}),
-        **({"email": a["email"]} if a.get("email") else {})}
-        for a in parsed["authors"]
-        if a.get("name")
-    ]
+
 
     # Publication date (today), used for everything
     publication_date_iso = date.today().isoformat()          # e.g. '2025-01-25'
