@@ -451,7 +451,7 @@ def render_in_staging(site_repo: Path, src_md: Path) -> Tuple[Path, Path, Path, 
 def reserve_deposition(api: str, token: str,
                        title: str, creators: List[Dict], abstract: str,
                        one_sentence: str, keywords: List[str],
-                       publication_date: str, site_html_url: str,
+                       publication_date: str, publication_year: str, site_html_url: str,
                        site_md_url: str, assets_pdf_url: str,
                        community: str, journal: str) -> Tuple[int, str, Optional[str]]:
     dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
@@ -473,8 +473,10 @@ def reserve_deposition(api: str, token: str,
         "notes": normalize_markdown_prose(one_sentence),
         "keywords": keywords,
         "journal_title": journal,
-        "publication_date": publication_date,
-        "license": "cc-bt-4.0",
+        "publisher": {"name": journal},
+        "publication_year": publication_year,
+        "date": publication_date,
+        "license": "cc-by-4.0",
         "related_identifiers": related_identifiers,
         "communities": [{"identifier": community}],
         "prereserve_doi": True
@@ -616,6 +618,7 @@ def main():
 
     # Publication date (today), used for everything
     publication_date_iso = date.today().isoformat()          # e.g. '2025-01-25'
+    publication_year = publication_date_iso[0:4]
     publication_date_long = format_long_date(publication_date_iso)
 
     # Replace header date in the staged markdown
@@ -624,7 +627,6 @@ def main():
     staged_md.write_text(md_text, encoding="utf-8")
 
     # Make "creation_date" equal to publication date (as requested)
-    creation_date = publication_date_iso
     publication_date = publication_date_iso
 
     # ---- site URLs (temporary; corrected after final move) ----
@@ -638,7 +640,7 @@ def main():
     dep_id, reserved_doi, concept_doi = reserve_deposition(
         api, token,
         title, creators, parsed["abstract"], parsed["one_sentence"], parsed["keywords"],
-        publication_date, tmp_html_url, tmp_md_url, tmp_assets_pdf_url,
+        publication_date, publication_year, tmp_html_url, tmp_md_url, tmp_assets_pdf_url,
         args.community, args.journal
     )
     doi = reserved_doi
@@ -681,7 +683,7 @@ def main():
     # ---- write FULL provenance (then show it) ----
     prov_path = write_provenance(final_dir, final_md, final_pdf, final_html, final_pmd,
                                  src_origin, src_commit,
-                                 title, creators, parsed, publication_date, creation_date,
+                                 title, creators, parsed, publication_date, publication_year,
                                  doi, concept_doi, assets_pdf_url, site_html_url,
                                  site_md_url, site_pandoc_md_url, version_permalink)
 

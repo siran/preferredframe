@@ -246,6 +246,11 @@ def build_article_pages():
     for prov in prints.glob("*/*/*/provenance.yaml"):
         data = yaml.safe_load(prov.read_text(encoding="utf-8"))
 
+        canonical_assets = (data.get("canonical_assets") or {})
+        assets_pdf = canonical_assets.get("pdf", "")
+        asset_html = canonical_assets.get("html", "")
+        asset_md   = canonical_assets.get("md", "")
+
         stem = prov.parent.parent.parent.name
         doi_prefix = prov.parent.parent.name
         doi_suffix = prov.parent.name
