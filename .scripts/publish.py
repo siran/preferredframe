@@ -64,12 +64,23 @@ def run(cmd: List[str], cwd: Optional[Path]=None, check=True) -> str:
     echo("+ " + " ".join(str(x) for x in cmd))
     p = subprocess.run(cmd, cwd=str(cwd) if cwd else None,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    out = (p.stdout or "")
+    out = (p.stdout)
     if out:
         print(out, end="" if out.endswith("\n") else "\n")
     if check and p.returncode != 0:
         die(f"command failed with exit code {p.returncode}", p.returncode)
     return out
+
+def format_long_date(d: date | str) -> str:
+    """Return 'January 25, 2025'. Accepts date or ISO 'YYYY-MM-DD'."""
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    try:
+        # Linux/macOS
+        return d.strftime("%B %-d, %Y")
+    except ValueError:
+        # Windows (uses %#d)
+        return d.strftime("%B %#d, %Y")
 
 # ---------------- git helpers ----------------
 
@@ -160,7 +171,7 @@ ORCID_URL_RE = re.compile(r'https?://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\
 ORCID_ID_RE  = re.compile(r'\b(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b')
 
 def normalize_orcid(s: str) -> Optional[str]:
-    s = (s or "").strip()
+    s = s.strip()
     if not s: return None
     if s.startswith("http"): return s
     return f"https://orcid.org/{s}"
@@ -203,6 +214,35 @@ def normalize_markdown_prose(md: str) -> str:
 
     # rejoin paragraphs with a blank line between them
     return "\n\n".join(out).strip()
+
+def replace_header_date(md_text: str, new_date_iso: str) -> str:
+    """
+    Replace the 3rd percent-header line with the given date ("Month D, YYYY").
+    If no 3rd line exists, insert it after existing % lines (or at top if none).
+    """
+    lines = md_text.replace("\r\n", "\n").splitlines()
+    long_date = format_long_date(new_date_iso)
+
+    # Find/replace within initial consecutive % lines (<= 3 expected)
+    head_count = 0
+    out = []
+    i = 0
+    while i < len(lines) and lines[i].lstrip().startswith("%"):
+        head_count += 1
+        if head_count == 3:
+            out.append(f"% {long_date}")      # replace date line
+        else:
+            out.append(lines[i])              # keep title/authors
+        i += 1
+
+    # If there were < 3 header lines, insert the date line now
+    if head_count < 3:
+        out.append(f"% {long_date}")
+
+    # Append the rest of the document body
+    out.extend(lines[i:])
+    return "\n".join(out)
+
 
 def parse_pnpmd(md_text: str) -> Dict:
     """
@@ -273,7 +313,7 @@ def parse_pnpmd(md_text: str) -> Dict:
     def get_sec(name: str) -> str:
         for k, v in secs.items():
             if k.strip().lower() == name.strip().lower():
-                return v or ""
+                return v
         return ""
 
     one_sentence = get_sec("One-Sentence Summary")
@@ -288,31 +328,46 @@ def parse_pnpmd(md_text: str) -> Dict:
         if first_line:
             keywords = [k.strip() for k in first_line.split(",") if k.strip()]
 
-    # --- authors (About Author(s)): bullet list lines "* " / "- " ---
+    # --- authors (About Author(s)): robust bullets with inline or next-part ORCID/email ---
     parsed_authors = []
-    for ln in about.splitlines():
-        m = re.match(r'^\s*[\*\-]\s+(.*)$', ln)
+    for raw in about.splitlines():
+        m = re.match(r'^\s*[\*\-]\s+(.*)$', raw)
         if not m:
             continue
         body = m.group(1).strip()
-        parts = [p.strip() for p in body.split(",")]
+
+        # Split by commas but keep parentheses content; typical forms:
+        # "Jane Doe, https://orcid.org/0000-0000-0000-0000, jane@x.com"
+        # "John Roe (ORCID: 0000-0000-0000-0000), john@x.com"
+        parts = [p.strip() for p in re.split(r',(?![^()]*\))', body) if p.strip()]
         name = parts[0] if parts else ""
+
         orcid = None
         email = None
+
+        # Scan entire bullet text for ORCID first (URL or bare ID)
+        mo_url = ORCID_URL_RE.search(body)
+        mo_id  = ORCID_ID_RE.search(body)
+        if mo_url:
+            orcid = normalize_orcid(mo_url.group(1))
+        elif mo_id:
+            orcid = normalize_orcid(mo_id.group(1))
+
+        # Email: look in trailing parts
         for p in parts[1:]:
-            if "orcid.org" in p or ORCID_ID_RE.search(p):
-                oid = ORCID_URL_RE.search(p)
-                orcid = normalize_orcid(oid.group(1)) if oid else normalize_orcid(ORCID_ID_RE.search(p).group(1))
-            elif "@" in p:
+            if "@" in p and not email:
                 email = p
+
         if name:
             entry = {"name": name}
             if orcid: entry["orcid"] = orcid
             if email: entry["email"] = email
             parsed_authors.append(entry)
 
+    # fallback: use % header authors if About Author(s) empty
     if not parsed_authors and header_authors:
         parsed_authors = [{"name": nm} for nm in header_authors]
+
 
     # --- scans ---
     found_orcids = sorted({
@@ -329,8 +384,8 @@ def parse_pnpmd(md_text: str) -> Dict:
         "title": title,
         "authors": parsed_authors,
         "date": pub_date,
-        "one_sentence": (one_sentence or "").strip(),
-        "abstract": (abstract or "").strip(),
+        "one_sentence": one_sentence.strip(),
+        "abstract": abstract.strip(),
         "keywords": keywords,
         "scanned_orcids": found_orcids,
         "reference_doi_urls": doi_urls
@@ -354,7 +409,7 @@ def _try_parse_date(s: str) -> Optional[datetime]:
     return None
 
 def normalize_pub_date(pnpmd_date: Optional[str]) -> str:
-    cand = (pnpmd_date or "").strip()
+    cand = pnpmd_date.strip()
     if cand:
         dt = _try_parse_date(cand)
         if dt:
@@ -381,7 +436,7 @@ def render_in_staging(site_repo: Path, src_md: Path) -> Tuple[Path, Path, Path, 
     shutil.copy2(src_md, dst_md)
 
     script_dir = Path(__file__).resolve().parent
-    render_py = (script_dir / "render.py") if (script_dir / "render.py").exists() else Path(shutil.which("render.py") or "")
+    render_py = (script_dir / "render.py") if (script_dir / "render.py").exists() else Path(shutil.which("render.py"))
     if not render_py or not render_py.exists():
         die("render.py not found beside this script or in PATH.")
     run([sys.executable, str(render_py), "--all", str(dst_md)], cwd=staging, check=True)
@@ -413,21 +468,21 @@ def reserve_deposition(api: str, token: str,
         "upload_type": "publication",
         "publication_type": "article",
         "title": title,
-        "creators": creators or [{"name": "Unknown"}],
-        "description": abstract or "No description provided.",
-        "notes": one_sentence or "",
-        "keywords": keywords or [],
+        "creators": creators,
+        "description": normalize_markdown_prose(abstract),
+        "notes": normalize_markdown_prose(one_sentence),
+        "keywords": keywords,
         "journal_title": journal,
         "publication_date": publication_date,
-        "license": "CC-BY-4.0",
+        "license": "cc-bt-4.0",
         "related_identifiers": related_identifiers,
         "communities": [{"identifier": community}],
         "prereserve_doi": True
     }
     dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": zenodo_meta})
-    pr = (dep.get("metadata") or {}).get("prereserve_doi") or {}
+    pr = (dep.get("metadata")).get("prereserve_doi")
     reserved_doi = pr.get("doi")
-    concept_doi = pr.get("conceptdoi") or None  # may be missing in sandbox or certain flows
+    concept_doi = pr.get("conceptdoi")  # may be missing in sandbox or certain flows
     return dep_id, reserved_doi, concept_doi
 
 def dump_yaml(obj) -> str:
@@ -444,48 +499,40 @@ def dump_yaml(obj) -> str:
 def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path, dst_pmd: Path,
                      src_origin: str, src_commit: str,
                      title: str, creators: List[Dict], parsed: Dict,
-                     publication_date: str, doi: str, concept_doi: Optional[str],
-                     assets_pdf_url: str, site_html_url: str, version_permalink: str) -> Path:
+                     publication_date: str, creation_date: str, doi: str, concept_doi: Optional[str],
+                     assets_pdf_url: str, site_html_url: str, site_md_url:str, site_pandoc_md_url:str,
+                     version_permalink: str) -> Path:
 
     prov = {
         "journal": "Preferred Frame",
+        "publication_type": "article",
+        "title": title,
+        "doi": doi,
+        "concept_doi": concept_doi,
+        "permalink": version_permalink,
+        "publication_date": publication_date,
+        "creation_date": creation_date,
+        "keywords": parsed["keywords"],
+        "one_sentence_summary": normalize_markdown_prose(parsed["one_sentence"]),
+        "abstract": normalize_markdown_prose(parsed["abstract"]),
+        "authors": creators,  # includes per-author ORCID/email when present
+        "references_doi": parsed["reference_doi_urls"],
         "source": {
             "repo_origin": src_origin,
-            "commit": src_commit
+            "commit": src_commit,
+            "filename": dst_md.name,
         },
         "artifacts": {
-            "main": dst_md.name,
-            "additional": {
-                "pdf": dst_pdf.name,
-                "html": dst_html.name,
-                "pandoc_md": dst_pmd.name
-            }
+            "md": dst_md.name,
+            "md_url": site_md_url,
+            "pandoc_md_name": dst_pmd.name,
+            "pandoc_md_url": site_pandoc_md_url,
+            "pdf_name": dst_pdf.name,
+            "pdf_url": assets_pdf_url,
+            "html_name": dst_html.name,
+            "html_url": site_html_url,
         },
-        "parsed_from_pnpmd": {
-            "title": title,
-            "authors": creators,
-            "date": publication_date,
-            "one_sentence_summary": normalize_markdown_prose(parsed["one_sentence"]),
-            "abstract": normalize_markdown_prose(parsed["abstract"]),
-            "keywords": parsed["keywords"]
-        },
-        "scanned": {
-            "authors_orcid": parsed["scanned_orcids"],
-            "references_doi": parsed["reference_doi_urls"]
-        },
-        "zenodo": {
-            "doi": doi
-        },
-        "assets": {
-            "pdf": assets_pdf_url
-        },
-        "site": {
-            "html_canonical": site_html_url,
-            "permalink": version_permalink
-        }
     }
-    if concept_doi:
-        prov["zenodo"]["concept_doi"] = concept_doi
 
     prov_path = dst_dir / "provenance.yaml"
     echo(f"+ write {prov_path}")
@@ -497,12 +544,12 @@ def get_deposition(api: str, token: str, dep_id: int) -> Dict:
 
 def list_files(api: str, token: str, dep_id: int) -> List[Dict]:
     dep = get_deposition(api, token, dep_id)
-    return dep.get("files") or []
+    return dep.get("files")
 
 def delete_file_if_exists(api: str, token: str, dep_id: int, filename: str):
     files = list_files(api, token, dep_id)
     for f in files:
-        if (f.get("filename") or "") == filename:
+        if (f.get("filename")) == filename:
             file_id = f.get("id")
             if file_id:
                 echo(f"+ DELETE existing file on Zenodo: {filename} (id={file_id})")
@@ -511,9 +558,9 @@ def delete_file_if_exists(api: str, token: str, dep_id: int, filename: str):
 
 def ensure_draft_or_die(api: str, token: str, dep_id: int) -> Dict:
     dep = get_deposition(api, token, dep_id)
-    state = dep.get("state") or ""          # "unsubmitted" or "inprogress" are drafts
+    state = dep.get("state")          # "unsubmitted" or "inprogress" are drafts
     submitted = dep.get("submitted")        # True after submit
-    links = dep.get("links") or {}
+    links = dep.get("links")
     bucket = links.get("bucket")
     can_upload = (submitted in (False, None)) and bool(bucket)
     if not can_upload:
@@ -558,9 +605,27 @@ def main():
 
     # ---- parse PNPMD & normalized date ----
     parsed = parse_pnpmd(staged_md.read_text(encoding="utf-8"))
-    title = parsed["title"] or staged_md.stem
-    creators = [{"name": a["name"], **({"orcid": a["orcid"]} if a.get("orcid") else {})} for a in parsed["authors"]]
-    publication_date = normalize_pub_date(parsed["date"] or "")  # yyyy-mm-dd
+    title = parsed["title"]
+    creators = [
+        {"name": a.get("name",""),
+        **({"orcid": a["orcid"]} if a.get("orcid") else {}),
+        **({"email": a["email"]} if a.get("email") else {})}
+        for a in parsed["authors"]
+        if a.get("name")
+    ]
+
+    # Publication date (today), used for everything
+    publication_date_iso = date.today().isoformat()          # e.g. '2025-01-25'
+    publication_date_long = format_long_date(publication_date_iso)
+
+    # Replace header date in the staged markdown
+    md_text = staged_md.read_text(encoding="utf-8")
+    md_text = replace_header_date(md_text, publication_date_iso)
+    staged_md.write_text(md_text, encoding="utf-8")
+
+    # Make "creation_date" equal to publication date (as requested)
+    creation_date = publication_date_iso
+    publication_date = publication_date_iso
 
     # ---- site URLs (temporary; corrected after final move) ----
     tmp_html_url = f"https://preferredframe.com/prints/_staging/{stem}/{staged_html.name}"
@@ -576,7 +641,7 @@ def main():
         publication_date, tmp_html_url, tmp_md_url, tmp_assets_pdf_url,
         args.community, args.journal
     )
-    doi = reserved_doi or ""
+    doi = reserved_doi
 
     # ---- final destination based on FULL DOI path ----
     # e.g., doi = "10.5281/zenodo.398094" -> prefix "10.5281", suffix "zenodo.398094"
@@ -607,6 +672,7 @@ def main():
     # corrected site URLs (for provenance + Zenodo related_identifiers)
     site_html_url = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_html.name}"
     site_md_url   = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_md.name}"
+    site_pandoc_md_url   = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_pmd.name}"
     version_permalink = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/"
 
     # FINAL assets URL mirrors prints/ (no date folder)
@@ -615,8 +681,9 @@ def main():
     # ---- write FULL provenance (then show it) ----
     prov_path = write_provenance(final_dir, final_md, final_pdf, final_html, final_pmd,
                                  src_origin, src_commit,
-                                 title, creators, parsed, publication_date,
-                                 doi, concept_doi, assets_pdf_url, site_html_url, version_permalink)
+                                 title, creators, parsed, publication_date, creation_date,
+                                 doi, concept_doi, assets_pdf_url, site_html_url,
+                                 site_md_url, site_pandoc_md_url, version_permalink)
 
     echo("\n--- PROVENANCE ---")
     print(prov_path)
@@ -670,8 +737,8 @@ def main():
         "publication_type": "article",
         "title":                       title,
         "creators":                    creators,
-        "description":                 normalize_markdown_prose(parsed["abstract"] or ""),
-        "notes":                       normalize_markdown_prose(parsed["one_sentence"] or ""),
+        "description":                 normalize_markdown_prose(parsed["abstract"]),
+        "notes":                       normalize_markdown_prose(parsed["one_sentence"]),
         "keywords":                    parsed["keywords"],
         "journal_title":               args.journal,
         "publication_date":            publication_date,
@@ -691,7 +758,7 @@ def main():
 
     # ---- upload to Zenodo via bucket (overwrites by name) & publish ----
     dep = ensure_draft_or_die(api, token, dep_id)
-    bucket_url = (dep.get("links") or {}).get("bucket")
+    bucket_url = (dep.get("links") ).get("bucket")
     if not bucket_url:
         die("Draft has no bucket link; cannot upload.")
 
