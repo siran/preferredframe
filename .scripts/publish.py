@@ -25,7 +25,6 @@ import traceback
 from typing import List, Optional, Dict, Tuple
 from datetime import date, datetime
 import yaml
-from markdown_it import MarkdownIt
 
 
 
@@ -165,39 +164,6 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
         return {}
 
 # ---------------- PNPMD parsing & scans ----------------
-
-DOI_RE = re.compile(r'\b10\.\d{4,9}/\S+\b')
-ORCID_ID_RE  = re.compile(r'\b(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
-ORCID_URL_RE = re.compile(r'\bhttps?://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
-
-def _orcid_parts(s: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Returns (bare_id, canonical_url) if an ORCID is found anywhere in s,
-    else (None, None). Bare id is what's expected by Zenodo's metadata.
-    """
-    if not s:
-        return None, None
-    m = ORCID_URL_RE.search(s) or ORCID_ID_RE.search(s)
-    if not m:
-        return None, None
-    bare = m.group(1)
-    return bare, f"https://orcid.org/{bare}"
-
-def normalize_orcid(s: str) -> Optional[str]:
-    s = s.strip()
-    if not s: return None
-    if s.startswith("http"): return s
-    return f"https://orcid.org/{s}"
-
-def section_text(md: str, name: str) -> str:
-    pat = re.compile(rf'^\s*##\s+{re.escape(name)}\s*$', re.I | re.M)
-    m = pat.search(md)
-    if not m: return ""
-    start = m.end()
-    m2 = re.search(r'^\s*##\s+.+?$', md[start:], re.M)
-    end = start + (m2.start() if m2 else len(md) - start)
-    return md[start:end].strip()
-
 def normalize_markdown_prose(md: str) -> str:
     """
     Convert markdown prose to a single string without hard-wrapped newlines.
@@ -257,245 +223,7 @@ def replace_header_date(md_text: str, new_date_iso: str) -> str:
     return "\n".join(out)
 
 
-import re
-from typing import Dict, List
-from markdown_it import MarkdownIt
-
-# --- regex helpers ---
-EMAIL_RE = re.compile(r'(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b')
-# ORCID ID = 16 chars grouped 4-4-4-3 + checksum char (0-9X)
-ORCID_ID_RE  = re.compile(r'\b(0000-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
-ORCID_URL_RE = re.compile(r'\bhttps?://orcid\.org/(0000-\d{4}-\d{4}-\d{3}[0-9X])\b', re.I)
-
-DOI_RE = re.compile(r'\b10\.\d{4,9}/[^\s"<>]+', re.I)
-
-def normalize_orcid(raw: str) -> str:
-    """Return uppercase checksum and normalized hyphenation for an ORCID id."""
-    if not raw:
-        return ""
-    oid = raw.upper()
-    # ensure hyphenated blocks 4-4-4-3+1
-    oid = oid.replace(" ", "").replace("/", "").replace("ORCID.ORG", "")
-    # if it's already hyphenated correctly, keep it
-    m = ORCID_ID_RE.search(oid)
-    return m.group(1) if m else ""
-
-def _orcid_parts(text: str):
-    """Find first ORCID in text; return (id, url) normalized/canonical if any."""
-    m_url = ORCID_URL_RE.search(text)
-    if m_url:
-        oid = normalize_orcid(m_url.group(1))
-        return (oid, f"https://orcid.org/{oid}") if oid else (None, None)
-    m_id = ORCID_ID_RE.search(text)
-    if m_id:
-        oid = normalize_orcid(m_id.group(1))
-        return (oid, f"https://orcid.org/{oid}") if oid else (None, None)
-    return (None, None)
-
-def _split_header_authors(raw_line: str) -> List[str]:
-    """
-    Split the 2nd header line into author names.
-    Respect the spec: it's a simple list of names.
-    We split on commas or the word 'and' when used as a separator.
-    """
-    # Replace ' and ' with comma to unify
-    s = re.sub(r'\band\b', ',', raw_line, flags=re.I)
-    # Now split on commas and strip
-    parts = [p.strip() for p in s.split(',')]
-    # Drop empties
-    parts = [p for p in parts if p]
-    return parts
-
-def parse_pnpmd(md_text: str) -> Dict:
-    """
-    Parse PNPMD using markdown-it-py for robust section extraction.
-    Header lines:
-      % Title
-      % Author(s)
-      % Date
-    Sections used:
-      ## One-Sentence Summary
-      ## Abstract
-      ## Keywords        (first non-empty line; comma-separated)
-      ## About Author(s) (list items: name, optional orcid/email)
-    Also scans ORCIDs and DOIs anywhere in the document.
-    """
-    # --- percent header (Pandoc-style) ---
-    lines = md_text.replace("\r\n", "\n").splitlines()
-    head = []
-    for i in range(min(3, len(lines))):
-        if lines[i].lstrip().startswith("%"):
-            head.append(lines[i].lstrip()[1:].strip())
-        else:
-            break
-    title = head[0] if len(head) >= 1 else ""
-    raw_authors_line = head[1] if len(head) >= 2 else ""
-    pub_date = head[2] if len(head) >= 3 else ""
-
-    # Split authors from the 2nd line: commas and standalone "and"
-    # Avoid empty fragments; strip spaces.
-    header_authors = []
-    if raw_authors_line:
-        # Replace " and " with comma, then split on commas
-        tmp = re.sub(r'\s+\band\b\s+', ',', raw_authors_line)
-        header_authors = [a.strip() for a in tmp.split(",") if a.strip()]
-
-    # strip header from body for section parsing
-    body_start = len(head)
-    md_body = "\n".join(lines[body_start:])
-
-    # --- parse sections with markdown-it ---
-    md = MarkdownIt("commonmark")
-    tokens = md.parse(md_body)
-
-    def collect_sections(tok_list) -> Dict[str, str]:
-        sections = {}
-        i = 0
-        while i < len(tok_list):
-            t = tok_list[i]
-            if t.type == "heading_open" and t.tag in {"h2", "h3", "h4", "h5", "h6"}:
-                if i + 1 < len(tok_list) and tok_list[i + 1].type == "inline":
-                    sec_title = tok_list[i + 1].content.strip()
-                    level = int(t.tag[1])
-                    j = i + 2
-                    buf = []
-                    while j < len(tok_list):
-                        tt = tok_list[j]
-                        if tt.type == "heading_open" and int(tt.tag[1]) <= level:
-                            break
-                        buf.append(tt.map and "\n".join(lines[tt.map[0]+body_start:tt.map[1]+body_start]) if tt.map else tt.content)
-                        j += 1
-                    sections[sec_title] = "\n".join(x for x in buf if x is not None).strip()
-                    i = j
-                    continue
-            i += 1
-        return sections
-
-    secs = collect_sections(tokens)
-
-    def get_sec(name: str) -> str:
-        for k, v in secs.items():
-            if k.strip().lower() == name.strip().lower():
-                return v
-        return ""
-
-    one_sentence = get_sec("One-Sentence Summary")
-    abstract     = get_sec("Abstract")
-    kb           = get_sec("Keywords")
-    about        = get_sec("About Author(s)")
-
-    # --- keywords: first non-empty line, comma-separated ---
-    keywords = []
-    if kb:
-        first_line = next((ln.strip() for ln in kb.splitlines() if ln.strip()), "")
-        if first_line:
-            keywords = [k.strip() for k in first_line.split(",") if k.strip()]
-
-    # ---------- Author parsing helpers ----------
-    def _normalize_name(name: str) -> str:
-        # Lowercase, collapse spaces, strip punctuation except period (keeps initials)
-        base = re.sub(r"[^\w.\s]", "", name.lower())
-        return re.sub(r"\s+", " ", base).strip()
-
-    def _extract_email(text: str) -> Optional[str]:
-        m = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", text)
-        return m.group(0) if m else None
-
-    def _extract_orcid(text: str) -> Tuple[Optional[str], Optional[str]]:
-        # Prefer URL if present; otherwise bare ID
-        murl = ORCID_URL_RE.search(text)
-        mid  = ORCID_ID_RE.search(text)
-        if murl:
-            oid = normalize_orcid(murl.group(1))
-            return oid, f"https://orcid.org/{oid}" if oid else None
-        if mid:
-            oid = normalize_orcid(mid.group(1))
-            return oid, f"https://orcid.org/{oid}" if oid else None
-        return None, None
-
-    # ---------- Parse About Author(s) lines ----------
-    about_authors: Dict[str, Dict[str, str]] = {}
-    if about:
-        for raw in about.splitlines():
-            line = raw.strip()
-            if not line:
-                continue
-            # Accept bullet "* " or "- " or bare line
-            m = re.match(r'^[\*\-\u2022]\s+(.*)$', line)
-            body = m.group(1).strip() if m else line
-
-            # Split by commas NOT inside parentheses
-            parts = [p.strip() for p in re.split(r',(?![^()]*\))', body) if p.strip()]
-            if not parts:
-                continue
-
-            name = parts[0]
-            email = _extract_email(body)
-            orcid_id, orcid_url = _extract_orcid(body)
-
-            entry = {"name": name}
-            if email:
-                entry["email"] = email
-            if orcid_id:
-                entry["orcid"] = orcid_id
-            if orcid_url:
-                entry["orcid_url"] = orcid_url
-
-            about_authors[_normalize_name(name)] = entry
-
-    # ---------- Merge: start from header order, enrich from About ----------
-    merged: List[Dict[str, str]] = []
-    seen_keys = set()
-
-    for nm in header_authors:
-        key = _normalize_name(nm)
-        base = {"name": nm}
-        if key in about_authors:
-            # enrich while preserving header display name
-            enriched = dict(about_authors[key])
-            enriched["name"] = nm
-            merged.append(enriched)
-            seen_keys.add(key)
-        else:
-            merged.append(base)
-            seen_keys.add(key)
-
-    # Append About-only authors not present in header
-    for key, entry in about_authors.items():
-        if key not in seen_keys:
-            merged.append(entry)
-
-    # ---------- Fallback: if no authors parsed at all ----------
-    if not merged and raw_authors_line:
-        merged = [{"name": nm} for nm in header_authors]
-
-    # --- scans (global) ---
-    found_orcids = sorted({
-        o for o in (
-            [normalize_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(md_text)] +
-            [normalize_orcid(m.group(1)) for m in ORCID_ID_RE.finditer(md_text)]
-        ) if o
-    })
-
-    dois = set(DOI_RE.findall(md_text))
-    doi_urls = sorted({"https://doi.org/" + d.rstrip('.,);:]') for d in dois})
-
-    # Ensure at least one ORCID appears inside authors if any ORCID is found globally
-    if found_orcids and all("orcid" not in a for a in merged):
-        # Assign the first found ORCID to the first author (best-effort fallback)
-        merged[0]["orcid"] = found_orcids[0]
-        merged[0]["orcid_url"] = f"https://orcid.org/{found_orcids[0]}"
-
-    return {
-        "title": title,
-        "authors": merged,
-        "date": pub_date,
-        "one_sentence": (one_sentence or "").strip(),
-        "abstract": (abstract or "").strip(),
-        "keywords": keywords,
-        "scanned_orcids": found_orcids,
-        "reference_doi_urls": doi_urls
-    }
+def parse_pnpmd
 
 # ---- date normalization ----
 MONTHS = {m.lower(): i for i, m in enumerate(
@@ -512,16 +240,6 @@ def _try_parse_date(s: str) -> Optional[datetime]:
         mon = MONTHS.get(m.group(1).lower()); yr = int(m.group(2))
         if mon: return datetime(yr, mon, 1)
     return None
-
-def normalize_pub_date(pnpmd_date: Optional[str]) -> str:
-    cand = pnpmd_date.strip()
-    if cand:
-        dt = _try_parse_date(cand)
-        if dt:
-            day = dt.day if dt.day != 0 else 1
-            return f"{dt.year:04d}-{dt.month:02d}-{day:02d}"
-    t = date.today(); return t.strftime("%Y-%m-%d")
-
 
 # ---------------- steps ----------------
 
@@ -653,16 +371,6 @@ def list_files(api: str, token: str, dep_id: int) -> List[Dict]:
     dep = get_deposition(api, token, dep_id)
     return dep.get("files")
 
-def delete_file_if_exists(api: str, token: str, dep_id: int, filename: str):
-    files = list_files(api, token, dep_id)
-    for f in files:
-        if (f.get("filename")) == filename:
-            file_id = f.get("id")
-            if file_id:
-                echo(f"+ DELETE existing file on Zenodo: {filename} (id={file_id})")
-                http_json("DELETE", f"{api}/deposit/depositions/{dep_id}/files/{file_id}", token)
-            break
-
 def ensure_draft_or_die(api: str, token: str, dep_id: int) -> Dict:
     dep = get_deposition(api, token, dep_id)
     state = dep.get("state")          # "unsubmitted" or "inprogress" are drafts
@@ -727,7 +435,6 @@ def main():
     # Publication date (today), used for everything
     publication_date_iso = date.today().isoformat()          # e.g. '2025-01-25'
     publication_year = publication_date_iso[0:4]
-    publication_date_long = format_long_date(publication_date_iso)
 
     # Replace header date in the staged markdown
     md_text = staged_md.read_text(encoding="utf-8")
