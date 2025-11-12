@@ -648,7 +648,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     for it in items_sorted:
         if it.is_dir:
             href = (it.name + "/") if rel_dir.parts else (rel(it.path).as_posix() + "/")
-            lines.append(f"- 📂 {it.name}/: [{href}]({href})")
+            lines.append(f"- 📂 [{href}]({href})")
         else:
             p_rel = rel(it.path)
             view = None
