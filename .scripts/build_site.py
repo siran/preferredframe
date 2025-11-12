@@ -157,7 +157,7 @@ def hidden_stems_from_provenance() -> set[str]:
 
 
 # ---------- templating ----------
-def write_html(out_html: Path, body_html: str, head_extra: str = ""):
+def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str = ""):
     header = load_text(SRC / "header.html")
     footer = load_text(SRC / "footer.html")
     coda   = load_text(SRC / "coda.html")
@@ -165,9 +165,10 @@ def write_html(out_html: Path, body_html: str, head_extra: str = ""):
     doc = "".join(s for s in (header, body_html, footer) if s)
 
     if head_extra:
-        charset = '<meta charset="UTF-8">'
+        charset = '<!DOCTYPE html><meta charset="UTF-8">'
+        title_tag = f"<title>{title} - Preferred Frame')</title>"
         if charset not in head_extra:
-            head_extra = charset + "\n" + head_extra
+            head_extra = charset + "\n" + title_tag + "\n" + head_extra
         m = re.search(r"</head\s*>", doc, re.IGNORECASE)
         if m:
             doc = doc[:m.start()] + head_extra + doc[m.start():]
@@ -621,7 +622,7 @@ def build_article_pages():
         )
         head_extra = "\n".join(head) + "\n"
 
-        write_html(stem_out/"index.html", "\n".join(body), head_extra=head_extra)
+        write_html(stem_out/"index.html", "\n".join(body), head_extra=head_extra, title=it["title"])
 
 # ---------- dir index ----------
 def breadcrumbs(rel_dir: Path) -> str:
