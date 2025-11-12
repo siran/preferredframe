@@ -16,6 +16,7 @@ EXCLUDE_NAMES = {
     "Makefile","index.html","_staging"
 }
 MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
+PREFERRED_JOURNAL = "Preferred Frame"
 
 # ---------- repo autodetect ----------
 def _parse_remote(url: str):
@@ -137,6 +138,23 @@ def _canonical_origin_from_provenance() -> str | None:
     except Exception:
         pass
     return None
+
+def hidden_stems_from_provenance() -> set[str]:
+    """Stems under prints/ whose journal != Preferred Frame."""
+    stems: set[str] = set()
+    prints = ROOT / "prints"
+    if not prints.exists():
+        return stems
+    for prov in prints.glob("*/*/*/provenance.yaml"):
+        try:
+            data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
+            j = (data.get("journal") or "").strip()
+            if j and j != PREFERRED_JOURNAL:
+                stems.add(prov.parent.parent.parent.name)  # prints/<stem>/<prefix>/<suffix>/
+        except Exception:
+            continue
+    return stems
+
 
 # ---------- templating ----------
 def write_html(out_html: Path, body_html: str, head_extra: str = ""):
@@ -271,6 +289,12 @@ def build_article_pages():
     for prov in prints.glob("*/*/*/provenance.yaml"):
         data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
 
+
+        # # skip if not Preferred Frame journal
+        # journal = (data.get("journal") or "").strip()
+        # if journal and journal != "Preferred Frame":
+        #     continue
+
         # derive identifiers from path
         stem = prov.parent.parent.parent.name
         doi_prefix = prov.parent.parent.name
@@ -335,6 +359,8 @@ def build_article_pages():
             "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name,
             "html_canonical": html_canonical,
         })
+
+        json.dumps(records, indent=2, default=str)
 
     groups = {}
     for r in records:
@@ -797,13 +823,33 @@ def main():
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
 
+    # Build article/stem/version pages for ALL prints (needed to host files)
     build_article_pages()
 
-    # directory listings
+    # Decide which stems to hide from directory listings
+    hidden_stems = hidden_stems_from_provenance()
+
+    # Directory listings (skip hidden stems only from listings; still mirror others)
     for dirpath, dirnames, filenames in os.walk(ROOT):
         d = Path(dirpath)
+
+        # Never descend into the output site
         if d == OUT:
-            dirnames.clear(); continue
+            dirnames.clear()
+            continue
+
+        # If we're under prints/<stem>/... and stem is hidden, skip listing for this subtree
+        if "prints" in d.parts:
+            # try:
+                i = d.parts.index("prints")
+                if len(d.parts) >= i+2 and d.parts[i+1] in hidden_stems:
+                    dirnames.clear()
+                    # Don't generate index.html for hidden subtree
+                    continue
+            # except ValueError:
+                # pass
+
+        # Normal pruning
         if dirpath != str(ROOT):
             first = Path(dirpath).relative_to(ROOT).parts[0]
             if first in EXCLUDE_NAMES:
@@ -811,41 +857,59 @@ def main():
             if (Path(dirpath)/"pyvenv.cfg").exists():
                 dirnames.clear(); continue
 
+        # Filter child dirs
         keep=[]
         for dd in list(dirnames):
+            # If we are exactly at prints/, drop hidden stems from listing
+            if d == ROOT / "prints" and dd in hidden_stems:
+                continue
             if dd in EXCLUDE_NAMES: continue
             if dd.startswith(".") and dd != ".well-known": continue
             if (Path(dirpath)/dd/"pyvenv.cfg").exists(): continue
             keep.append(dd)
         dirnames[:] = keep
 
+        # Mirror selected files (unchanged logic)
         for fname in filenames:
             if fname.startswith("."): continue
             p = d/fname
             if p.suffix.lower() in MIRROR_EXTS and "prints" in p.parts:
+                # If file is under a hidden stem, skip mirroring into the generic listing area
+                try:
+                    i = p.parts.index("prints")
+                    if len(p.parts) >= i+2 and p.parts[i+1] in hidden_stems:
+                        continue
+                except ValueError:
+                    pass
                 dst = OUT/rel(p)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, dst)
 
+        # Build dir index only if not already present
+        out_html = (OUT/rel(d)/"index.html") if d != ROOT else (OUT/"index.html")
+        if out_html.exists():
+            continue
+
+        # Build item list excluding hidden stems at prints/
         items = []
+        # Dirs
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
             if p.name.startswith(".") and p.name != ".well-known": continue
+            if d == ROOT / "prints" and p.name in hidden_stems:
+                continue
             if (p/"pyvenv.cfg").exists(): continue
             items.append(Item(name=p.name, is_dir=True, mtime=p.stat().st_mtime, path=p))
+        # Files
         for p in sorted([x for x in d.iterdir() if x.is_file() and not x.name.startswith(".")],
                         key=lambda x: x.name.lower()):
             if p.name in EXCLUDE_NAMES: continue
             items.append(Item(name=p.name, is_dir=False, mtime=p.stat().st_mtime, path=p))
 
-        out_html = (OUT/rel(d)/"index.html") if d != ROOT else (OUT/"index.html")
-        if out_html.exists(): continue
-
         md_body = format_dir_index(d, items)
         write_md_like_page(out_html, md_body)
 
     copy_static()
-
     build_sitemap_and_robots()
     build_rss_feed()
 
