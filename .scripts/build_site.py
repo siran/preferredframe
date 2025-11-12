@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, subprocess, urllib.parse, shutil, re, json
+import os, subprocess, urllib.parse, shutil, re, json, io
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse, quote
@@ -103,8 +103,18 @@ class Item:
     mtime: float
     path: Path
 
+def _asset_url(x) -> str:
+    """Accept str or dict; return URL/path string or ''."""
+    if not x: return ""
+    if isinstance(x, str): return x.strip()
+    if isinstance(x, dict): return (x.get("url") or x.get("href") or x.get("path") or "").strip()
+    return ""
+
 def _canonical_origin_from_provenance() -> str | None:
-    """Infer https://preferredframe.com from provenance.site.permalink/html_canonical."""
+    """
+    Infer canonical origin from provenance (new: top-level 'permalink';
+    old: site.permalink or site.html_canonical).
+    """
     try:
         prints_dir = ROOT / "prints"
         if not prints_dir.exists():
@@ -112,13 +122,16 @@ def _canonical_origin_from_provenance() -> str | None:
         for prov in prints_dir.glob("*/*/*/provenance.yaml"):
             try:
                 data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
-                site_block = data.get("site") or {}
-                for key in ("permalink", "html_canonical"):
-                    u = site_block.get(key) or ""
-                    if u.startswith("http"):
-                        p = urlparse(u)
-                        if p.scheme and p.netloc:
-                            return f"{p.scheme}://{p.netloc}"
+                # new schema
+                u = (data.get("permalink") or "").strip()
+                # old schema fallbacks
+                if not u:
+                    site_block = (data.get("site") or {})
+                    u = (site_block.get("permalink") or site_block.get("html_canonical") or "").strip()
+                if u.startswith("http"):
+                    p = urlparse(u)
+                    if p.scheme and p.netloc:
+                        return f"{p.scheme}://{p.netloc}"
             except Exception:
                 continue
     except Exception:
@@ -178,8 +191,9 @@ def _to_datetime(obj) -> datetime | None:
     if isinstance(obj, datetime): return obj
     if isinstance(obj, date):    return datetime.combine(obj, datetime.min.time())
     if isinstance(obj, str):
+        s = obj.strip()
         for fmt in ("%Y-%m-%d","%Y-%m","%Y"):
-            try: return datetime.strptime(obj, fmt)
+            try: return datetime.strptime(s, fmt)
             except Exception: pass
     return None
 
@@ -217,22 +231,33 @@ def extract_html_body(html_text: str) -> str:
     return html_text
 
 # ---------- authors ----------
+def _orcid_url(v: str) -> str:
+    v = (v or "").strip()
+    if not v: return ""
+    if v.startswith("http"): return v
+    m = re.search(r'(\d{4}-\d{4}-\d{4}-\d{3}[0-9Xx])', v)
+    return f"https://orcid.org/{m.group(1).upper()}" if m else ""
+
 def normalize_authors(auth_list):
     out = []
     for a in (auth_list or []):
         if isinstance(a, dict):
             nm = (a.get("name") or a.get("full_name") or "").strip()
-            oc = (a.get("orcid") or a.get("id") or "").strip()
+            oc = _orcid_url(a.get("orcid") or a.get("id") or a.get("orcid_id") or "")
+            em = (a.get("email") or "").strip()
         else:
-            nm = str(a).strip(); oc = ""
-        if not nm: continue
-        if nm.lower() == "name": continue
-        out.append({"name": nm, "orcid": oc})
+            nm = str(a).strip(); oc = ""; em = ""
+        if not nm or nm.lower() == "name":
+            continue
+        item = {"name": nm}
+        if oc: item["orcid"] = oc
+        if em: item["email"] = em
+        out.append(item)
     return out
 
 def fmt_author(a):
     nm = a.get("name","").strip()
-    oc = a.get("orcid","").strip()
+    oc = _orcid_url(a.get("orcid","").strip())
     if not nm: return ""
     if oc: return f'{nm} (<a href="{oc}">ORCID</a>)'
     return nm
@@ -244,35 +269,61 @@ def build_article_pages():
 
     records = []
     for prov in prints.glob("*/*/*/provenance.yaml"):
-        data = yaml.safe_load(prov.read_text(encoding="utf-8"))
+        data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
 
-        canonical_assets = (data.get("canonical_assets") or {})
-        assets_pdf = canonical_assets.get("pdf", "")
-        asset_html = canonical_assets.get("html", "")
-        asset_md   = canonical_assets.get("md", "")
-
+        # derive identifiers from path
         stem = prov.parent.parent.parent.name
         doi_prefix = prov.parent.parent.name
         doi_suffix = prov.parent.name
 
-        pf = data.get("parsed_from_pnpmd") or {}
-        title   = pf.get("title") or ""
-        authors = normalize_authors(pf.get("authors"))
-        abstract= pf.get("abstract") or ""
-        kws     = pf.get("keywords") or []
-        date_norm = pf.get("date") or ""
-        zenodo  = data.get("zenodo") or {}
-        doi     = zenodo.get("doi") or ""
-        concept = zenodo.get("concept_doi") or ""
-        site_block = data.get("site") or {}
-        html_canonical = site_block.get("html_canonical")
-        assets_pdf = (data.get("assets") or {}).get("pdf") or ""
+        # ---- NEW schema (preferred), with OLD fallbacks ----
+        # titles/abstract/keywords/authors/dates
+        pf_block = data.get("parsed_from_pnpmd") or {}  # old
+        title    = (data.get("title") or pf_block.get("title") or "") or ""
+        abstract = (data.get("abstract") or pf_block.get("abstract") or "") or ""
+        kws      = (data.get("keywords") or pf_block.get("keywords") or []) or []
+        # authors: new at top-level; old under parsed_from_pnpmd
+        authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
 
+        # dates
+        date_norm = (data.get("publication_date") or data.get("creation_date") or
+                     pf_block.get("date") or "")
+
+        # DOI/concept DOI
+        zenodo = data.get("zenodo") or {}  # old
+        doi     = (data.get("doi") or zenodo.get("doi") or "") or ""
+        concept = (data.get("concept_doi") or zenodo.get("concept_doi") or "") or ""
+
+        # site/permalink/html_canonical
+        permalink = (data.get("permalink") or "") or ""
+        site_block = data.get("site") or {}  # old
+        html_canonical = (site_block.get("html_canonical") or site_block.get("permalink") or permalink or "").strip()
+
+        # assets/artifacts (both shapes)
+        assets = (data.get("assets") or {})                 # old: may contain dict/str entries
+        canonical_assets = (data.get("canonical_assets") or {})  # very old
         artifacts = (data.get("artifacts") or {})
-        md_name = artifacts.get("main") or (html_canonical and Path(html_canonical).name.replace(".html",".md"))
-        add = artifacts.get("additional") or {}
-        html_name = Path(html_canonical).name if html_canonical else add.get("html")
-        pmd_name = add.get("pandoc_md")
+
+        # filenames in repo folder (prefer explicit names)
+        md_name   = (artifacts.get("md") or artifacts.get("main") or None)
+        html_name = (artifacts.get("html_name") or None)
+        pmd_name  = (artifacts.get("pandoc_md_name") or artifacts.get("pandoc_md") or None)
+        add_old   = artifacts.get("additional") or {}  # old nesting
+        if not html_name: html_name = add_old.get("html")
+        if not pmd_name:  pmd_name  = add_old.get("pandoc_md")
+
+        # derive names from URLs if needed
+        if not md_name and artifacts.get("md_url"):
+            md_name = Path(artifacts["md_url"]).name
+        if not html_name and artifacts.get("html_url"):
+            html_name = Path(artifacts["html_url"]).name
+        if not pmd_name and artifacts.get("pandoc_md_url"):
+            pmd_name = Path(artifacts["pandoc_md_url"]).name
+
+        # PDF: prefer explicit pdf_url (new). Fallbacks to assets/canonical_assets.
+        assets_pdf = (artifacts.get("pdf_url") or
+                      _asset_url(assets.get("pdf")) or
+                      _asset_url(canonical_assets.get("pdf")) or "")
 
         records.append({
             "prov": prov, "stem": stem,
@@ -281,7 +332,8 @@ def build_article_pages():
             "abstract": abstract, "kws": kws,
             "date": date_norm, "doi": doi, "concept": concept,
             "assets_pdf": assets_pdf,
-            "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name
+            "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name,
+            "html_canonical": html_canonical,
         })
 
     groups = {}
@@ -382,7 +434,7 @@ def build_article_pages():
             authors_ld = []
             for a in display_authors:
                 nm = a.get("name","").strip()
-                oc = a.get("orcid","").strip()
+                oc = _orcid_url(a.get("orcid","").strip())
                 if not nm: continue
                 ent = {"@type":"Person","name": nm}
                 if oc: ent["sameAs"] = [oc]
@@ -401,6 +453,7 @@ def build_article_pages():
             }
             if enc: article_ld["encoding"] = enc
             if it["doi"]:
+                # keep only the DOI suffix after last '/'
                 article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
             head.append(
                 '<script type="application/ld+json">'
@@ -416,7 +469,7 @@ def build_article_pages():
             alias_dir.mkdir(parents=True, exist_ok=True)
             write_html(alias_dir/"index.html", "\n".join(body), head_extra=head_extra)
 
-        # --- STEM page ---
+        # --- STEM page (latest) ---
         it = latest
         src = it["prov"].parent
         stem_out = OUT/"prints"/stem
@@ -515,7 +568,7 @@ def build_article_pages():
         authors_ld = []
         for a in display_authors:
             nm = a.get("name","").strip()
-            oc = a.get("orcid","").strip()
+            oc = _orcid_url(a.get("orcid","").strip())
             if not nm: continue
             ent = {"@type":"Person","name": nm}
             if oc: ent["sameAs"] = [oc]
@@ -603,30 +656,6 @@ def _url_from_out_path(p: Path) -> str:
         return f"{BASE_URL}/" + rp
     return ""  # ignore other files
 
-from urllib.parse import urlparse
-
-def _canonical_origin_from_provenance() -> str | None:
-    """Infer https://preferredframe.com from provenance.site.permalink/html_canonical."""
-    try:
-        prints_dir = ROOT / "prints"
-        if not prints_dir.exists():
-            return None
-        for prov in prints_dir.glob("*/*/*/provenance.yaml"):
-            try:
-                data = yaml.safe_load(prov.read_text(encoding="utf-8"))
-                site_block = (data or {}).get("site") or {}
-                for key in ("permalink", "html_canonical"):
-                    u = site_block.get(key) or ""
-                    if u.startswith("http"):
-                        p = urlparse(u)
-                        if p.scheme and p.netloc:
-                            return f"{p.scheme}://{p.netloc}"
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return None
-
 def build_sitemap_and_robots():
     # Canonical origin: ENV → provenance → BASE_URL
     origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
@@ -687,19 +716,18 @@ def build_sitemap_and_robots():
     )
     (OUT / "robots.txt").write_text(robots, encoding="utf-8")
 
+# ---------- RSS ----------
 def build_rss_feed():
     """
     Produce /rss.xml with one item per STEM (latest version).
-    Uses provenance for titles/authors/dates/abstract and canonical URLs.
+    Compatible with both old and new provenance schemas.
     """
     origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
 
-    # collect latest per stem
     prints = ROOT / "prints"
     if not prints.exists():
         return
 
-    # scan provenance
     by_stem = {}
     for prov in prints.glob("*/*/*/provenance.yaml"):
         try:
@@ -708,24 +736,21 @@ def build_rss_feed():
             continue
 
         stem = prov.parent.parent.parent.name
-        pf = data.get("parsed_from_pnpmd") or {}
-        title   = pf.get("title") or stem
-        authors = normalize_authors(pf.get("authors"))
-        abstract= pf.get("abstract") or ""
-        date_norm = pf.get("date") or None
-        zenodo  = data.get("zenodo") or {}
-        doi     = zenodo.get("doi") or ""
 
-        # canonical URLs
-        site_block = data.get("site") or {}
-        permalink = site_block.get("permalink")  # preferred if present
+        pf_block = data.get("parsed_from_pnpmd") or {}  # old
+        title    = (data.get("title") or pf_block.get("title") or stem)
+        authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
+        abstract = (data.get("abstract") or pf_block.get("abstract") or "")
+        date_norm= (data.get("publication_date") or data.get("creation_date") or pf_block.get("date") or None)
+        doi      = (data.get("doi") or (data.get("zenodo") or {}).get("doi") or "")
+
+        # URL: prefer top-level permalink, else stem page
+        permalink = (data.get("permalink") or "").strip()
         if permalink and permalink.startswith("http"):
             item_url = permalink.rstrip("/")
         else:
-            # default to stem page
             item_url = f"{origin}/prints/{stem}/"
 
-        # choose latest by date (fallback to mtime of provenance)
         dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
         keep = by_stem.get(stem)
         if not keep or dt > keep["dt"]:
@@ -739,16 +764,14 @@ def build_rss_feed():
                 "doi": doi,
             }
 
-    # build feed
     fg = FeedGenerator()
-    fg.load_extension('podcast')  # harmless; ensures proper namespaces if needed
+    fg.load_extension('podcast')
     fg.title('Preferred Frame — Publications')
     fg.link(href=origin+'/', rel='alternate')
     fg.link(href=origin+'/rss.xml', rel='self')
     fg.description('Latest publications from Preferred Frame')
     fg.language('en')
 
-    # items sorted newest first
     items = sorted(by_stem.values(), key=lambda x: x["date"], reverse=True)
     for it in items:
         fe = fg.add_entry()
@@ -757,16 +780,11 @@ def build_rss_feed():
         fe.title(it["title"])
         if it["abstract"]:
             fe.description(it["abstract"])
-        # author list
         for a in it["authors"]:
             nm = a.get("name","").strip()
             if nm:
                 fe.author({'name': nm})
-        # pubDate
-        # RFC-2822 via feedgen expects datetime with tz; use UTC
         fe.pubDate(it["date"].astimezone(timezone.utc))
-
-        # add DOI as an extra link if present
         if it["doi"]:
             fe.link(href=f'https://doi.org/{it["doi"].split("/")[-1]}', rel='related')
 
@@ -828,10 +846,7 @@ def main():
 
     copy_static()
 
-    # finally: sitemap + robots
     build_sitemap_and_robots()
-
-    # finally: RSS
     build_rss_feed()
 
 if __name__ == "__main__":
