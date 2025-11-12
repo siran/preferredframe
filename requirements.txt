@@ -2,3 +2,4 @@ feedgen==0.9.0
 pyyaml
 markdown-it-py
 requests
+panflute

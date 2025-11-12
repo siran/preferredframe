@@ -18,6 +18,8 @@ Flow:
   8) Merge publish branch into main locally and push only main
 """
 
+import io
+import json
 import os, re, sys, shutil, subprocess
 from pathlib import Path
 import time
@@ -25,7 +27,7 @@ import traceback
 from typing import List, Optional, Dict, Tuple
 from datetime import date, datetime
 import yaml
-
+import panflute as pf
 
 
 #### to quote URLs with special characters using PyYaml ####
@@ -222,8 +224,223 @@ def replace_header_date(md_text: str, new_date_iso: str) -> str:
     out.extend(lines[i:])
     return "\n".join(out)
 
+# ---- regexes ----
+ORCID_URL_RE = re.compile(r"https?://orcid\.org/(\d{4}-\d{4}-\d{4}-\d{3}[0-9Xx])")
+ORCID_ID_RE  = re.compile(r"\b(\d{4}-\d{4}-\d{4}-\d{3}[0-9Xx])\b", re.IGNORECASE)
+EMAIL_RE     = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+DOI_RE       = re.compile(r"\b10\.\d{4,9}/[^\s\"<>]+", re.IGNORECASE)
 
-def parse_pnpmd
+def _norm_orcid(s: str) -> str:
+    return s.upper().replace(" ", "")
+
+def _key(n: str) -> str:
+    import unicodedata
+    n = unicodedata.normalize("NFKC", n).lower()
+    return " ".join(ch for ch in re.sub(r"[^0-9a-z. ]+", " ", n).split())
+
+def _collect_section(doc: pf.Doc, title: str):
+    blocks = list(doc.content)
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if isinstance(b, pf.Header) and pf.stringify(b).strip().lower() == title.lower():
+            level = b.level
+            j = i + 1
+            out = []
+            while j < len(blocks):
+                if isinstance(blocks[j], pf.Header) and blocks[j].level <= level:
+                    break
+                out.append(blocks[j])
+                j += 1
+            return out
+        i += 1
+    return []
+
+def _listish(blocks):
+    """Yield list items (ListItem) if lists, else paragraphs as singletons."""
+    for b in blocks:
+        if isinstance(b, (pf.BulletList, pf.OrderedList)):
+            for li in b.content:
+                yield li
+        elif isinstance(b, pf.ListItem):
+            yield b
+        elif isinstance(b, pf.Para):
+            yield b
+
+def _stringify_blocks(blocks) -> str:
+    blks = list(blocks)
+    if not blks:
+        return ""
+    # Wrap list of blocks into a single Element so stringify can walk it
+    return pf.stringify(pf.Div(*blks)).strip()
+
+
+def _extract_about_authors(items) -> List[Dict[str, str]]:
+    authors = []
+    for it in items:
+        text = pf.stringify(it).strip()
+        if not text:
+            continue
+
+        # Name = text up to first comma (keeps commas later intact)
+        name = text.split(",", 1)[0].strip()
+
+        m_email = EMAIL_RE.search(text)
+        email = m_email.group(0) if m_email else None
+
+        m_orcid_url = ORCID_URL_RE.search(text)
+        m_orcid_id  = ORCID_ID_RE.search(text)
+        orcid = None
+        if m_orcid_url:
+            orcid = _norm_orcid(m_orcid_url.group(1))
+        elif m_orcid_id:
+            orcid = _norm_orcid(m_orcid_id.group(1))
+
+        entry = {"name": name}
+        if orcid:
+            entry["orcid"] = orcid
+        if email:
+            entry["email"] = email
+        authors.append(entry)
+    return authors
+
+def _pandoc_doc(md_text: str) -> pf.Doc:
+    # get Pandoc JSON
+    p = subprocess.run(
+        ["pandoc", "-f", "markdown+tex_math_dollars", "-t", "json"],
+        input=md_text.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True
+    )
+    ast = json.loads(p.stdout)                 # <-- dict
+    # feed a *stream* to panflute.load
+    return pf.load(io.StringIO(json.dumps(ast)))
+
+def parse_pnpmd(md_text: str) -> Dict:
+    """
+    Parse PNPMD with Pandoc → Pandoc JSON → panflute.Doc
+    Works even if convert_text returns list instead of Doc.
+    """
+    # Call Pandoc manually and capture JSON
+    p = subprocess.run(
+        ["pandoc", "-f", "markdown+tex_math_dollars", "-t", "json"],
+        input=md_text.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True
+    )
+
+    # Load panflute Doc
+    doc = _pandoc_doc(md_text)
+    meta = doc.get_metadata()
+    # --- after reading meta = doc.get_metadata() ---
+
+    def _meta_str(x):
+        return x if isinstance(x, str) else pf.stringify(x) if x is not None else ""
+
+    def _split_header_authors(s: str) -> List[str]:
+        """
+        Split a single author line like 'A, B and C' → ['A','B','C'].
+        Conservative: split on ' and ' or commas not inside parentheses.
+        """
+        # prefer ' and ' and ';'
+        parts = re.split(r'\s+\band\b\s+|;', s)
+        if len(parts) == 1:
+            # fallback: commas not inside parentheses
+            parts = re.split(r',(?![^()]*\))', s)
+        return [p.strip() for p in parts if p.strip()]
+
+    meta = doc.get_metadata()
+    title = _meta_str(meta.get("title", ""))
+    pub_date = _meta_str(meta.get("date", ""))
+
+    raw_auth = meta.get("author", [])
+    if isinstance(raw_auth, list):
+        # some pandoc versions put a single combined string in a 1-item list
+        if len(raw_auth) == 1 and isinstance(raw_auth[0], str):
+            header_authors = _split_header_authors(raw_auth[0])
+        else:
+            header_authors = [_meta_str(a) for a in raw_auth]
+    elif isinstance(raw_auth, str):
+        header_authors = _split_header_authors(raw_auth)
+    else:
+        header_authors = []
+
+
+    # Title / date
+    def _meta_str(x):
+        return x if isinstance(x, str) else pf.stringify(x) if x is not None else ""
+    title = _meta_str(meta.get("title", ""))
+    pub_date = _meta_str(meta.get("date", ""))
+
+    # Authors from percent header → Pandoc meta
+    meta_auth = meta.get("author", [])
+    header_authors = []
+    if isinstance(meta_auth, list):
+        header_authors = [_meta_str(a) for a in meta_auth]
+    elif isinstance(meta_auth, str):
+        header_authors = [meta_auth]
+
+    # Sections
+    one_sentence = _stringify_blocks(_collect_section(doc, "One-Sentence Summary")).strip()
+    abstract     = _stringify_blocks(_collect_section(doc, "Abstract")).strip()
+    kb_text      = _stringify_blocks(_collect_section(doc, "Keywords"))
+    about_blocks = _collect_section(doc, "About Author(s)")
+    refs_blocks  = _collect_section(doc, "References")
+
+    # Keywords: first non-empty line, comma-separated
+    first_line = next((ln.strip() for ln in kb_text.splitlines() if ln.strip()), "")
+    keywords = [k.strip() for k in first_line.split(",") if k.strip()] if first_line else []
+
+    # About authors (list items or paragraphs)
+    about_items = list(_listish(about_blocks))
+    about_parsed = _extract_about_authors(about_items)
+    about_index = {_key(a["name"]): a for a in about_parsed}
+
+    # Merge: preserve header order; enrich from About
+    merged = []
+    seen = set()
+    for nm in header_authors:
+        k = _key(nm)
+        if k in about_index:
+            e = dict(about_index[k]); e["name"] = nm
+            merged.append(e); seen.add(k)
+        else:
+            merged.append({"name": nm}); seen.add(k)
+    for k, e in about_index.items():
+        if k not in seen:
+            merged.append(e)
+
+    # Fallback: if no authors at all but meta has a single string
+    if not merged and header_authors:
+        merged = [{"name": nm} for nm in header_authors]
+
+    # Reference DOIs: scan the References section only (then de-dup)
+    refs_text = _stringify_blocks(refs_blocks)
+    ref_dois = sorted({m.group(0).rstrip('.,);:]') for m in DOI_RE.finditer(refs_text)})
+    reference_doi_urls = [f"https://doi.org/{d}" for d in ref_dois]
+
+    # Global ORCIDs (optional: may help fill a missing one)
+    full_text = pf.stringify(doc)
+    global_orcids = sorted({
+        _norm_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(full_text)
+    } | {
+        _norm_orcid(m.group(1)) for m in ORCID_ID_RE.finditer(full_text)
+    })
+    if global_orcids and all("orcid" not in a for a in merged) and merged:
+        merged[0]["orcid"] = global_orcids[0]
+
+    return {
+        "title": title,
+        "date": pub_date,
+        "one_sentence": one_sentence,
+        "abstract": abstract,
+        "keywords": keywords,
+        "authors": merged,                 # [{name, orcid?, email?}]
+        "reference_doi_urls": reference_doi_urls
+    }
+
 
 # ---- date normalization ----
 MONTHS = {m.lower(): i for i, m in enumerate(
