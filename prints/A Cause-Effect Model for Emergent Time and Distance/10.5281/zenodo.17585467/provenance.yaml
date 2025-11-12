@@ -1,0 +1,37 @@
+journal: Preferred Frame
+publication_type: article
+title: A Cause-Effect Model for Emergent Time and Distance
+doi: 10.5281/zenodo.17585467
+concept_doi: null
+permalink: "https://preferredframe.com/prints/A Cause-Effect Model for Emergent Time and Distance/10.5281/zenodo.17585467/"
+publication_date: '2025-11-11'
+creation_date: '2025'
+keywords:
+- cause-effect
+- emergent time
+- emergent distance
+- subnodes
+- partial order
+- stable Node
+one_sentence_summary: A single stable Node with incomputable internal structure yields emergent time from cause-effect ordering and distance from causal step counts.
+abstract: We present a framework in which reality emerges from a single, stable Node possessing an incomputable internal structure. This Node is fundamentally unchanging in total energy, yet contains subnodes capable of creating cause-effect relationships. These relationships define a partial order of “before’’ and “after’’—which we interpret as time. Distance likewise emerges by counting the number of causal steps required for a subnode i to affect a subnode j. When access to j is indirect or nonexistent, a round-trip chain of cause and effect within the same subnode can serve to define both a clock and a notion of distance. Despite its minimal assumptions, this scheme remains consistent with the idea that space, time, and measurement originate from interactions internal to a stable underlying structure.
+authors:
+- name: Anes Palma
+- name: An M. Rodriguez
+  orcid: 0009-0009-9098-9468
+  email: an@preferredframe.com
+references_doi:
+- https://doi.org/10.13140/RG.2.2.35753.30569
+source:
+  repo_origin: git@github.com:siran/research.git
+  commit: a6ece764efd4eca7ebd4f666a8721e5c6465c7ef
+  filename: A Cause-Effect Model for Emergent Time and Distance.md
+artifacts:
+  md: A Cause-Effect Model for Emergent Time and Distance.md
+  md_url: "https://preferredframe.com/prints/A Cause-Effect Model for Emergent Time and Distance/10.5281/zenodo.17585467/A Cause-Effect Model for Emergent Time and Distance.md"
+  pandoc_md_name: A Cause-Effect Model for Emergent Time and Distance.pandoc.md
+  pandoc_md_url: "https://preferredframe.com/prints/A Cause-Effect Model for Emergent Time and Distance/10.5281/zenodo.17585467/A Cause-Effect Model for Emergent Time and Distance.pandoc.md"
+  pdf_name: A Cause-Effect Model for Emergent Time and Distance.pdf
+  pdf_url: "https://assets.preferredframe.com/preferredframe/A Cause-Effect Model for Emergent Time and Distance/10.5281/zenodo.17585467/A Cause-Effect Model for Emergent Time and Distance.pdf"
+  html_name: A Cause-Effect Model for Emergent Time and Distance.html
+  html_url: "https://preferredframe.com/prints/A Cause-Effect Model for Emergent Time and Distance/10.5281/zenodo.17585467/A Cause-Effect Model for Emergent Time and Distance.html"

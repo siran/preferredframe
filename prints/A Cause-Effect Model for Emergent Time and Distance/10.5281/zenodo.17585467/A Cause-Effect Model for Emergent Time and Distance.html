@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Anes Palma" />
+  <meta name="author" content="An M. Rodriguez" />
+  <meta name="dcterms.date" content="2025-11-11" />
+  <title>A Cause-Effect Model for Emergent Time and Distance</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">A Cause-Effect Model for Emergent Time and
+Distance</h1>
+<p class="author">Anes Palma</p>
+<p class="author">An M. Rodriguez</p>
+<p class="date">November 11, 2025</p>
+</header>
+<h1 data-number="1" id="sec:one-sentence-summary"><span
+class="header-section-number">1</span> One-Sentence Summary</h1>
+<p>A single stable Node with incomputable internal structure yields
+emergent time from cause-effect ordering and distance from causal step
+counts.</p>
+<h1 data-number="2" id="sec:abstract"><span
+class="header-section-number">2</span> Abstract</h1>
+<p>We present a framework in which reality emerges from a single, stable
+Node possessing an incomputable internal structure. This Node is
+fundamentally unchanging in total energy, yet contains subnodes capable
+of creating cause-effect relationships. These relationships define a
+partial order of “before’’ and “after’’—which we interpret as
+<em>time</em>. Distance likewise emerges by counting the number of
+causal steps required for a subnode <span
+class="math inline"><em>i</em></span> to affect a subnode <span
+class="math inline"><em>j</em></span>. When access to <span
+class="math inline"><em>j</em></span> is indirect or nonexistent, a
+round-trip chain of cause and effect within the same subnode can serve
+to define both a clock and a notion of distance. Despite its minimal
+assumptions, this scheme remains consistent with the idea that space,
+time, and measurement originate from interactions internal to a stable
+underlying structure.</p>
+<h1 data-number="3" id="sec:keywords"><span
+class="header-section-number">3</span> Keywords</h1>
+<p>cause-effect, emergent time, emergent distance, subnodes, partial
+order, stable Node</p>
+<h1 data-number="4" id="sec:introduction"><span
+class="header-section-number">4</span> Introduction</h1>
+<p>Conventional physics often begins by assuming a background space and
+a global time parameter. In contrast, we start with a single,
+indivisible Node, denoted by <span
+class="math inline"><em>N</em></span>, that is <em>by definition</em>
+changeless in its overall property (e.g., total energy). Within <span
+class="math inline"><em>N</em></span>, however, exists a richly layered,
+incomputable arrangement of <em>subnodes</em> that interact, producing
+cause-effect chains.</p>
+<p><strong>Key idea</strong></p>
+<blockquote>
+<p><em>“Time’’ emerges as the observed ordering of cause and effect
+among subnodes. Distance emerges by counting how many cause-effect steps
+occur between two subnodes (or within repeated interactions of the same
+subnode).</em></p>
+</blockquote>
+<h1 data-number="5" id="sec:stable-node-and-internal-structure"><span
+class="header-section-number">5</span> Stable Node and Internal
+Structure</h1>
+<h2 data-number="5.1" id="sec:definition-of-the-node"><span
+class="header-section-number">5.1</span> Definition of the Node</h2>
+<p>Let us call this entire structure <span
+class="math inline"><strong>N</strong></span>:</p>
+<p><span
+class="math display"><strong>N</strong> = {<em>n</em><sub><em>i</em></sub> ∣ <em>i</em> ∈ <em>I</em>}</span></p>
+<p>where each <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> is a subnode.
+The Node as a whole is stable: there is no net change in total energy or
+other overall properties. Internally, however, the subnodes can be
+arranged so that <em>local</em> causes produce <em>local</em> effects
+elsewhere.</p>
+<h2 data-number="5.2" id="sec:cause-effect-relation"><span
+class="header-section-number">5.2</span> Cause-Effect Relation</h2>
+<p>We formalize a cause-effect relation among the subnodes. If subnode
+<span class="math inline"><em>n</em><sub><em>i</em></sub></span> can
+trigger a change in subnode <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>, we
+write:</p>
+<p><span
+class="math display"><em>n</em><sub><em>i</em></sub> ≻ <em>n</em><sub><em>j</em></sub></span></p>
+<p>meaning “<span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> is the cause,
+<span class="math inline"><em>n</em><sub><em>j</em></sub></span> is the
+effect.’’ This relation is partial: not all pairs of subnodes need to be
+causally related. It is also not necessarily symmetric; if <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> affects <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>, it does not
+automatically mean <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span> affects <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>.</p>
+<h2 data-number="5.3" id="sec:emergent-time-as-ordering"><span
+class="header-section-number">5.3</span> Emergent Time as Ordering</h2>
+<p>From the partial order <span class="math inline">≻</span>, we
+interpret <span
+class="math inline"><em>n</em><sub><em>i</em></sub> ≻ <em>n</em><sub><em>j</em></sub></span>
+as “<span class="math inline"><em>n</em><sub><em>i</em></sub></span>
+occurs <em>before</em> <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>’’ in the
+emergent sense. A chain</p>
+<p><span
+class="math display"><em>n</em><sub><em>i</em></sub> ≻ <em>n</em><sub><em>a</em></sub> ≻ <em>n</em><sub><em>b</em></sub> ≻ <em>n</em><sub><em>j</em></sub></span></p>
+<p>implies a sequence of cause-effect steps linking <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> to <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>. Thus, even
+without referencing an external clock, we can consistently define an
+ordering akin to time.</p>
+<h1 data-number="6" id="sec:constructing-a-clock"><span
+class="header-section-number">6</span> Constructing a Clock</h1>
+<h2 data-number="6.1" id="sec:local-clock-from-self-interaction"><span
+class="header-section-number">6.1</span> Local Clock from
+Self-Interaction</h2>
+<p>A single subnode <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> can be used
+to build a rudimentary “clock’’ by the following repeated loop:</p>
+<ol type="1">
+<li><strong>Cause in <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>:</strong>
+<span class="math inline"><em>n</em><sub><em>i</em></sub></span> emits a
+perturbation or signal.</li>
+<li><strong>Propagation:</strong> The perturbation travels through a
+chain of subnodes (possibly including <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> itself
+multiple times).</li>
+<li><strong>Return to <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>:</strong>
+Eventually the effect reappears in <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>, closing the
+loop.</li>
+</ol>
+<p>We then count the discrete causal steps (or observe a repeated
+pattern of changes in <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>) to define a
+repeatable unit. This cyclical process <em>is</em> the “tick’’ of the
+clock.</p>
+<h2 data-number="6.2" id="sec:cause-effect-duration"><span
+class="header-section-number">6.2</span> Cause-Effect Duration</h2>
+<p>If subnode <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> directly
+affects subnode <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>, we define a
+one-step cause-effect delay (one “unit’’). If a signal must travel a
+longer chain:</p>
+<p><span
+class="math display"><em>n</em><sub><em>i</em></sub> ≻ <em>n</em><sub><em>a</em></sub> ≻ <em>n</em><sub><em>b</em></sub> ≻ … ≻ <em>n</em><sub><em>j</em></sub></span></p>
+<p>then the chain length can be counted, giving more units. In practice,
+each step might be weighted by a factor (e.g., different subnode
+couplings), but the essential notion is that <em>time</em> emerges from
+counting these intervals.</p>
+<h1 data-number="7" id="sec:emergent-distance"><span
+class="header-section-number">7</span> Emergent Distance</h1>
+<h2 data-number="7.1" id="sec:definition-of-distance"><span
+class="header-section-number">7.1</span> Definition of Distance</h2>
+<p>Distance between two subnodes <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> and <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span> can be
+defined as the causal step count for <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> to affect
+<span class="math inline"><em>n</em><sub><em>j</em></sub></span>. If the
+minimal chain from <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> to <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span> has length
+<span
+class="math inline"><em>L</em><sub><em>i</em><em>j</em></sub></span>,
+then</p>
+<p><span
+class="math display"><em>d</em>(<em>n</em><sub><em>i</em></sub>, <em>n</em><sub><em>j</em></sub>) ∝ <em>L</em><sub><em>i</em><em>j</em></sub></span></p>
+<p>Here, <span
+class="math inline"><em>L</em><sub><em>i</em><em>j</em></sub></span>
+might be 1 if they are “adjacent’’ in causal terms or larger if the
+signal must traverse many intermediate subnodes.</p>
+<h2 data-number="7.2" id="sec:local-vs.-non-local-interactions"><span
+class="header-section-number">7.2</span> Local vs. Non-Local
+Interactions</h2>
+<ul>
+<li><strong>Local:</strong> If <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> can directly
+trigger <span class="math inline"><em>n</em><sub><em>j</em></sub></span>
+with minimal intermediaries, <span
+class="math inline"><em>d</em>(<em>n</em><sub><em>i</em></sub>, <em>n</em><sub><em>j</em></sub>)</span>
+is small.</li>
+<li><strong>Non-Local:</strong> If there is no straightforward path from
+<span class="math inline"><em>n</em><sub><em>i</em></sub></span> to
+<span class="math inline"><em>n</em><sub><em>j</em></sub></span>, then
+the distance is undefined or effectively infinite.</li>
+</ul>
+<p>Sometimes we lack direct access to <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span>. Then we
+measure distance via a round-trip within <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> itself:</p>
+<p><span
+class="math display"><em>n</em><sub><em>i</em></sub> ≻ … ≻ <em>n</em><sub><em>i</em></sub></span></p>
+<p>Count the steps in the loop. A subnode can gauge an apparent distance
+to something else by noticing changes in its own state after some chain
+of events.</p>
+<h1 data-number="8" id="sec:reflections-and-chains"><span
+class="header-section-number">8</span> Reflections and Chains</h1>
+<p>Signals or perturbations may:</p>
+<ul>
+<li>Travel directly from <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span> to <span
+class="math inline"><em>n</em><sub><em>j</em></sub></span> if they are
+adjacent in the cause-effect diagram.</li>
+<li>Pass through multiple intermediaries <span
+class="math inline">(<em>n</em><sub><em>a</em></sub>, <em>n</em><sub><em>b</em></sub>, …)</span>.</li>
+<li>Reflect back to the original subnode <span
+class="math inline"><em>n</em><sub><em>i</em></sub></span>, closing a
+loop used for timing.</li>
+</ul>
+<p>Regardless of path complexity, each segment corresponds to a
+well-defined cause-effect step. Summing or concatenating these steps
+yields a measure of duration and thus a notion of distance.</p>
+<h1 data-number="9" id="sec:discussion"><span
+class="header-section-number">9</span> Discussion</h1>
+<h2 data-number="9.1" id="sec:why-the-node-is-still-stable"><span
+class="header-section-number">9.1</span> Why the Node is Still
+“Stable’’</h2>
+<p>Although we speak of cause-effect steps and subnode interactions, the
+Node <span class="math inline"><em>N</em></span> as a whole remains
+changeless in its global property (energy, etc.). The cause-effect
+network represents internal rearrangements of that fixed total. Nothing
+external changes; the entire structure is like a static tapestry of
+possible cause-effect pathways, but locally perceived as sequences of
+transformations.</p>
+<h2 data-number="9.2" id="sec:consistency-with-physical-theories"><span
+class="header-section-number">9.2</span> Consistency with Physical
+Theories</h2>
+<ul>
+<li><strong>General Physical Compatibility:</strong> By not specifying
+the exact subnode coupling, emergent geometry or fields can arise.
+Standard concepts (mass, charge, etc.) may be grafted onto these
+cause-effect relationships.</li>
+<li><strong>Signal-Based Metric:</strong> Physics often uses light
+signals or wave propagation to define time and distance operationally.
+This model generalizes that idea to any cause-effect path in the
+abstract Node.</li>
+</ul>
+<h1 data-number="10" id="sec:conclusion"><span
+class="header-section-number">10</span> Conclusion</h1>
+<p>We have outlined a model in which:</p>
+<ol type="1">
+<li>A single, stable Node houses an incomputable internal structure of
+subnodes.</li>
+<li>Subnodes interact via cause-effect relationships, establishing a
+partial order.</li>
+<li><em>Time</em> emerges from the local ordering of cause and
+effect.</li>
+<li><em>Distance</em> emerges by counting how many steps are required
+for a subnode <span class="math inline"><em>i</em></span> to affect
+another subnode <span class="math inline"><em>j</em></span> (or itself
+again in a loop).</li>
+</ol>
+<p>This framework reproduces the key operational features of
+measurement: we build clocks from repeated cause-effect loops, and we
+measure distances by the causal chains needed to propagate signals.
+Hence, familiar constructs of time and space follow naturally from the
+stable Node’s internal logic of cause and effect.</p>
+<h1 data-number="11" id="sec:about-authors"><span
+class="header-section-number">11</span> About Author(s)</h1>
+<p>An M. Rodriguez, an@preferredframe.com,
+https://orcid.org/0009-0009-9098-9468</p>
+<h1 data-number="12" id="sec:references"><span
+class="header-section-number">12</span> References</h1>
+<ol type="1">
+<li>Rodriguez, An M. (2025). <em>A cause–effect model for emergent time
+and distance</em>. https://doi.org/10.13140/RG.2.2.35753.30569</li>
+</ol>
+</body>
+</html>
