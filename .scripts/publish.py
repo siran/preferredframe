@@ -352,10 +352,10 @@ def parse_pnpmd(md_text: str) -> Dict:
         return [p.strip() for p in parts if p.strip()]
 
     meta = doc.get_metadata()
-    title = _meta_str(meta.get("title", ""))
-    pub_date = _meta_str(meta.get("date", ""))
+    title = meta.get("title", "")
+    pub_date = meta.get("date", "")
 
-    raw_auth = meta.get("author", [])
+    raw_auth = meta.get("author")
     if isinstance(raw_auth, list):
         # some pandoc versions put a single combined string in a 1-item list
         if len(raw_auth) == 1 and isinstance(raw_auth[0], str):
@@ -364,8 +364,6 @@ def parse_pnpmd(md_text: str) -> Dict:
             header_authors = [_meta_str(a) for a in raw_auth]
     elif isinstance(raw_auth, str):
         header_authors = _split_header_authors(raw_auth)
-    else:
-        header_authors = []
 
 
     # Title / date
@@ -373,14 +371,6 @@ def parse_pnpmd(md_text: str) -> Dict:
         return x if isinstance(x, str) else pf.stringify(x) if x is not None else ""
     title = _meta_str(meta.get("title", ""))
     pub_date = _meta_str(meta.get("date", ""))
-
-    # Authors from percent header → Pandoc meta
-    meta_auth = meta.get("author", [])
-    header_authors = []
-    if isinstance(meta_auth, list):
-        header_authors = [_meta_str(a) for a in meta_auth]
-    elif isinstance(meta_auth, str):
-        header_authors = [meta_auth]
 
     # Sections
     one_sentence = _stringify_blocks(_collect_section(doc, "One-Sentence Summary")).strip()
@@ -467,13 +457,20 @@ def prepare_branch(site_repo: Path, stem: str, src_commit: str) -> str:
     run(["git", "checkout", "-b", branch_name], cwd=site_repo)
     return branch_name
 
-def render_in_staging(site_repo: Path, src_md: Path) -> Tuple[Path, Path, Path, Path]:
+def render_in_staging(site_repo: Path, src_md: Path, publication_date_iso: str) -> Tuple[Path, Path, Path, Path]:
     stem = src_md.stem
     staging = site_repo / "prints" / "_staging" / stem
     staging.mkdir(parents=True, exist_ok=True)
     dst_md = staging / src_md.name
     echo(f"+ copy {src_md} -> {dst_md}")
     shutil.copy2(src_md, dst_md)
+
+    staged_md = dst_md
+
+    # Replace header date in the staged markdown
+    md_text = dst_md.read_text(encoding="utf-8")
+    md_text = replace_header_date(md_text, publication_date_iso)
+    dst_md.write_text(md_text, encoding="utf-8")
 
     script_dir = Path(__file__).resolve().parent
     render_py = (script_dir / "render.py") if (script_dir / "render.py").exists() else Path(shutil.which("render.py"))
@@ -626,13 +623,17 @@ def main():
     if not git_status_clean(site_repo):
         input(f"Site repo has uncommitted changes: {site_repo}. Press Enter to continue or Ctrl-C to abort.")
 
+    # Publication date (today)
+    publication_date_iso = date.today().isoformat()   # e.g. '2025-01-25'
+    publication_year = publication_date_iso[0:4]
+
     stem = src_md.stem
 
     # ---- branch ----
     branch_name = prepare_branch(site_repo, stem, src_commit)
 
     # ---- stage & render ----
-    staging, staged_md, staged_pdf, staged_html = render_in_staging(site_repo, src_md)
+    staging, staged_md, staged_pdf, staged_html = render_in_staging(site_repo, src_md, publication_date_iso)
     staged_pmd = staged_md.with_suffix(".pandoc.md")
 
     # ---- parse PNPMD & normalized date ----
@@ -649,9 +650,7 @@ def main():
     title = parsed["title"]
 
 
-    # Publication date (today), used for everything
-    publication_date_iso = date.today().isoformat()          # e.g. '2025-01-25'
-    publication_year = publication_date_iso[0:4]
+
 
     # Replace header date in the staged markdown
     md_text = staged_md.read_text(encoding="utf-8")
