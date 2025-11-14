@@ -848,8 +848,8 @@ def main():
     run(["git", "add", rel_pmd],  cwd=site_repo)
     run(["git", "add", rel_prov], cwd=site_repo)
     run(["git", "commit", "-m",
-         f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{final_md.stem}'"],
-        cwd=site_repo)
+     f"Publish print: {title} ({publication_date}, DOI {doi}); source {src_commit[:10]} as '{final_md.stem}'"], cwd=site_repo)
+
 
     # ---- copy PDF to assets repo & push (default ON) ----
     if args.assets_dir:
@@ -905,19 +905,35 @@ def main():
             if ans_cd in ("", "y", "yes"):
                 try:
                     prov_data = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
-                    prov_data["concept_doi"] = concept_doi_rec
-                    prov_path.write_text(dump_yaml(prov_data), encoding="utf-8")
-                    rel_prov = str(prov_path.relative_to(site_repo))
-                    run(["git", "add", rel_prov], cwd=site_repo)
-                    run(["git", "commit", "-m",
-                         f"Update concept DOI in provenance for {title}"], cwd=site_repo)
-                    concept_doi_updated = concept_doi_rec
+                    concept_doi_old = prov_data.get("concept_doi")
+                    if concept_doi_old == concept_doi_rec:
+                        echo("Concept DOI unchanged; provenance already up to date.")
+                    else:
+                        echo(
+                            f"Updating concept DOI "
+                            f"{concept_doi_old or 'None'} → {concept_doi_rec}"
+                        )
+                        prov_data["concept_doi"] = concept_doi_rec
+                        prov_path.write_text(dump_yaml(prov_data), encoding="utf-8")
+                        rel_prov = str(prov_path.relative_to(site_repo))
+                        run(["git", "add", rel_prov], cwd=site_repo)
+                        run(
+                            [
+                                "git",
+                                "commit",
+                                "-m",
+                                f"Update concept DOI {concept_doi_old or 'None'} → {concept_doi_rec}",
+                            ],
+                            cwd=site_repo,
+                        )
+                        concept_doi_updated = concept_doi_rec
                 except Exception as e:
                     echo(f"WARNING: Failed to update provenance with concept DOI: {e}")
         else:
             echo("No concept DOI present in record; leaving provenance as-is.")
     except Exception as e:
         echo(f"WARNING: Failed to retrieve record to update concept DOI: {e}")
+
 
     # ---- merge publish branch into main locally, then push only main ----
     run(["git", "checkout", "main"], cwd=site_repo)
