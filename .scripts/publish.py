@@ -12,12 +12,13 @@ Flow:
   2) Stage copy of src.md into prints/_staging/<stem>/ and render (.pdf, .html, .pandoc.md)
   3) Parse PNPMD; scan ORCIDs & DOIs; normalize publication_date (ISO yyyy-mm-dd)
   4) Check for existing provenance for this stem; enforce commit policy & optional “new version” decision
-  5) Reserve deposition / DOI (single final metadata blob later)
+  5) Reserve deposition / DOI (minimal metadata)
   6) Move rendered files to final path prints/<stem>/<doi_prefix>/<doi_suffix>/
   7) Write full provenance (including Zenodo metadata) and show it
   8) Show Zenodo metadata, file lists, and action plan; single confirmation
   9) Commit site repo; copy PDF to assets repo & push; update Zenodo with FULL metadata; upload files; publish
- 10) Merge publish branch into main locally and push only main
+ 10) After publish, fetch concept DOI and optionally update provenance on publish branch
+ 11) Merge publish branch into main locally and push only main
 """
 
 import io
@@ -33,21 +34,20 @@ import panflute as pf
 
 
 #### to quote URLs with special characters using PyYaml ####
-# characters that tend to confuse parsers if left unquoted in URLs
 _URL_UNSAFE_CHARS = set(" \t()[]{}<>|\"'")
 
 class PFYamlDumper(yaml.SafeDumper):
-    pass
+    # Disable anchors/aliases – always inline
+    def ignore_aliases(self, data):
+        return True
 
 
 def _needs_double_quotes_for_url(s: str) -> bool:
     if "://" not in s:
         return False
-    # quote if any unsafe char appears
     return any(c in _URL_UNSAFE_CHARS for c in s)
 
 def _pf_represent_str(dumper: yaml.Dumper, data: str):
-    # feed raw string to PyYAML; only set style for specific cases
     style = '"' if _needs_double_quotes_for_url(data) else None
     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style=style)
 
@@ -70,6 +70,7 @@ def run(cmd: List[str], cwd: Optional[Path]=None, check=True) -> str:
     out = (p.stdout)
     if out:
         print(out, end="" if out.endswith("\n") else "\n")
+    print()
     if check and p.returncode != 0:
         die(f"command failed with exit code {p.returncode}", p.returncode)
     return out
@@ -79,10 +80,8 @@ def format_long_date(d: date | str) -> str:
     if isinstance(d, str):
         d = date.fromisoformat(d)
     try:
-        # Linux/macOS
         return d.strftime("%B %-d, %Y")
     except ValueError:
-        # Windows (uses %#d)
         return d.strftime("%B %#d, %Y")
 
 # ---------------- git helpers ----------------
@@ -92,8 +91,6 @@ def slug_branch(s: str) -> str:
     s = re.sub(r'[^a-z0-9._-]+', '-', s)
     s = re.sub(r'-{2,}', '-', s).strip('-')
     s = s.lstrip('.-')
-    if s.endswith('.back_sectionlock'):
-        s = s[:-5] + '-lock'
     if s.endswith('.lock'):
         s = s[:-5] + '-lock'
     return s[:80] or 'x'
@@ -118,10 +115,6 @@ def git_origin_url(repo: Path) -> str:
 # ---------------- env / http ----------------
 
 def zenodo_api_and_token(env: str) -> Tuple[str, str]:
-    """
-    Resolve Zenodo API base + token from the selected environment.
-    - requires ZENODO_TOKEN, ZENODO_API / ZENODO_SANDBOX_API
-    """
     token = os.environ.get("ZENODO_TOKEN")
     if not token:
         die("Missing ZENODO_TOKEN for Zenodo API.")
@@ -133,7 +126,6 @@ def zenodo_api_and_token(env: str) -> Tuple[str, str]:
     return api, token
 
 def http_put_raw(url: str, token: str, fp):
-    """PUT raw bytes to Zenodo bucket (S3-like). fp must be a binary file handle."""
     try:
         import requests
     except Exception:
@@ -175,14 +167,8 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
 
 # ---------------- PNPMD parsing & scans ----------------
 def normalize_markdown_prose(md: str) -> str:
-    """
-    Convert markdown prose to a single string without hard-wrapped newlines.
-    - Single newlines inside a paragraph → space
-    - Blank lines (paragraph breaks) preserved
-    """
     if not md:
         return ""
-
     lines = md.replace("\r\n", "\n").split("\n")
     out = []
     buf = []
@@ -199,14 +185,9 @@ def normalize_markdown_prose(md: str) -> str:
         else:
             buf.append(line)
     flush_buf()
-
     return "\n\n".join(out).strip()
 
 def replace_header_date(md_text: str, new_date_iso: str) -> str:
-    """
-    Replace the 3rd percent-header line with the given date ("Month D, YYYY").
-    If no 3rd line exists, insert it after existing % lines (or at top if none).
-    """
     lines = md_text.replace("\r\n", "\n").splitlines()
     long_date = format_long_date(new_date_iso)
 
@@ -260,7 +241,6 @@ def _collect_section(doc: pf.Doc, title: str):
     return []
 
 def _listish(blocks):
-    """Yield list items (ListItem) if lists, else paragraphs as singletons."""
     for b in blocks:
         if isinstance(b, (pf.BulletList, pf.OrderedList)):
             for li in b.content:
@@ -282,7 +262,6 @@ def _extract_about_authors(items) -> List[Dict[str, str]]:
         text = pf.stringify(it).strip()
         if not text:
             continue
-
         name = text.split(",", 1)[0].strip()
 
         m_email = EMAIL_RE.search(text)
@@ -316,9 +295,6 @@ def _pandoc_doc(md_text: str) -> pf.Doc:
     return pf.load(io.StringIO(json.dumps(ast)))
 
 def parse_pnpmd(md_text: str) -> Dict:
-    """
-    Parse PNPMD with Pandoc → Pandoc JSON → panflute.Doc
-    """
     doc = _pandoc_doc(md_text)
     meta = doc.get_metadata()
 
@@ -467,7 +443,16 @@ def reserve_deposition(api: str, token: str,
     Reserve a DOI on Zenodo with minimal metadata + prereserve_doi.
     Full metadata is sent later once final paths are known.
     """
+    # POST new deposition
     dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
+
+    # Debug: raw POST response
+    try:
+        print("\n--- DEBUG: Zenodo POST /deposit/depositions response ---")
+        print(json.dumps(dep, indent=2, ensure_ascii=False))
+    except Exception:
+        traceback.print_exc()
+
     dep_id = dep.get("id")
     if not dep_id:
         die("Could not create deposition (no id).")
@@ -486,9 +471,19 @@ def reserve_deposition(api: str, token: str,
 
     dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token,
                     data={"metadata": minimal_meta})
+
+    # Debug: raw PUT response
+    try:
+        print(f"\n--- DEBUG: Zenodo PUT /deposit/depositions/{dep_id} response ---")
+        print(json.dumps(dep, indent=2, ensure_ascii=False))
+    except Exception:
+        traceback.print_exc()
+
     pr = (dep.get("metadata") or {}).get("prereserve_doi") or {}
     reserved_doi = pr.get("doi")
-    concept_doi = pr.get("conceptdoi")
+    # conceptdoi normally only on record after publish; may be None here
+    concept_doi = dep.get("conceptdoi")
+
     if not reserved_doi:
         die("Zenodo did not return a reserved DOI.")
     return dep_id, reserved_doi, concept_doi
@@ -539,6 +534,7 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
             "pdf_url": assets_pdf_url,
             "html_name": dst_html.name,
             "html_url": site_html_url,
+            "primary": "md",
         },
     }
 
@@ -568,10 +564,6 @@ def ensure_draft_or_die(api: str, token: str, dep_id: int) -> Dict:
     return dep
 
 def find_latest_provenance_for_stem(site_repo: Path, stem: str) -> Tuple[Optional[Path], Optional[Dict]]:
-    """
-    Return (provenance_path, provenance_data) for the latest known
-    publication of this stem, or (None, None) if none exists.
-    """
     base = site_repo / "prints" / stem
     if not base.exists():
         return None, None
@@ -715,9 +707,21 @@ def main():
     assets_pdf_url     = f"{args.assets_base_url}/preferredframe/{stem}/{doi_prefix}/{doi_suffix}/{final_pdf.name}"
 
     related_identifiers = [
-        {"relation": "isIdenticalTo", "identifier": site_html_url,  "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": site_md_url,    "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
+        {
+            "relation": "isIdenticalTo",
+            "identifier": site_html_url,
+            "resource_type": "publication-article",
+        },
+        {
+            "relation": "isIdenticalTo",
+            "identifier": site_md_url,
+            "resource_type": "publication-article",
+        },
+        {
+            "relation": "isIdenticalTo",
+            "identifier": assets_pdf_url,
+            "resource_type": "publication-article",
+        },
     ]
 
     zenodo_meta = {
@@ -762,7 +766,7 @@ def main():
         echo(f" - {p.relative_to(site_repo)}")
 
     echo("\n--- FILES TO UPLOAD TO ZENODO ---")
-    for p in [final_pdf, final_md, final_pmd, final_html]:
+    for p in [final_md, final_pdf, final_pmd, final_html]:
         echo(f" - {p.name}")
 
     echo("\n--- PREVIEW: ACTIONS AFTER CONFIRMATION ---")
@@ -781,7 +785,7 @@ def main():
             echo("  git push")
     echo("Zenodo:")
     echo(f"  PUT /deposit/depositions/{dep_id} (metadata)")
-    echo("  PUT PDF, md, pandoc.md, html to bucket")
+    echo("  PUT md, PDF, pandoc.md, html to bucket")
     echo("  POST /deposit/depositions/{id}/actions/publish")
     echo("Git:")
     echo("  git checkout main")
@@ -794,19 +798,16 @@ def main():
     if ans not in ("y", "yes"):
         echo("Aborting; cleaning up Zenodo draft, git branch, and files.")
 
-        # delete Zenodo deposition (best-effort)
         try:
             http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token, data=None)
         except Exception:
             echo("WARNING: Failed to delete Zenodo deposition. Please check manually.")
 
-        # remove final_dir files from site repo
         try:
             shutil.rmtree(final_dir)
         except Exception:
             echo(f"WARNING: Failed to remove {final_dir}; please clean manually.")
 
-        # restore original branch and delete publish branch
         try:
             if orig_branch and orig_branch != branch_name:
                 run(["git", "checkout", orig_branch], cwd=site_repo)
@@ -863,7 +864,8 @@ def main():
 
     from urllib.parse import quote
 
-    for path in [final_pdf, final_md, final_pmd, final_html]:
+    # md first (treat as primary), then PDF, then others
+    for path in [final_md, final_pdf, final_pmd, final_html]:
         fname = path.name
         put_url = f"{bucket_url}/{quote(fname)}"
         with open(path, "rb") as fh:
@@ -873,6 +875,32 @@ def main():
 
     _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
 
+    # ---- after publish: fetch concept DOI and optionally update provenance ----
+    concept_doi_updated = None
+    try:
+        record = http_json("GET", f"{api}/records/{dep_id}", token, data=None)
+        concept_doi_rec = record.get("conceptdoi")
+        if concept_doi_rec:
+            echo(f"\nConcept DOI from record: {concept_doi_rec}")
+            ans_cd = input("Update provenance.yaml with this concept DOI? [Y/n]: ").strip().lower()
+            if ans_cd in ("", "y", "yes"):
+                try:
+                    prov_data = yaml.safe_load(prov_path.read_text(encoding="utf-8")) or {}
+                    prov_data["concept_doi"] = concept_doi_rec
+                    prov_path.write_text(dump_yaml(prov_data), encoding="utf-8")
+                    rel_prov = str(prov_path.relative_to(site_repo))
+                    run(["git", "add", rel_prov], cwd=site_repo)
+                    run(["git", "commit", "-m",
+                         f"Update concept DOI in provenance for {title}"], cwd=site_repo)
+                    concept_doi_updated = concept_doi_rec
+                except Exception as e:
+                    echo(f"WARNING: Failed to update provenance with concept DOI: {e}")
+        else:
+            echo("No concept DOI present in record; leaving provenance as-is.")
+    except Exception as e:
+        echo(f"WARNING: Failed to retrieve record to update concept DOI: {e}")
+
+    # ---- merge publish branch into main locally, then push only main ----
     run(["git", "checkout", "main"], cwd=site_repo)
     run(["git", "merge", "--no-ff", branch_name], cwd=site_repo)
     run(["git", "push", "origin", "main"], cwd=site_repo)
@@ -880,7 +908,7 @@ def main():
 
     echo(f"\n✅ Publication committed and DOI minted"
          f"\nVersion DOI: {doi}"
-         f"\nConcept DOI: {concept_doi or '(none)'}"
+         f"\nConcept DOI: {concept_doi_updated or concept_doi or '(none)'}"
          f"\nPermalink: {version_permalink}"
          f"\nFolder: {final_dir}")
 
