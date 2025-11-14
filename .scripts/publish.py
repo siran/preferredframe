@@ -706,11 +706,12 @@ def main():
     version_permalink  = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/"
     assets_pdf_url     = f"{args.assets_base_url}/preferredframe/{stem}/{doi_prefix}/{doi_suffix}/{final_pdf.name}"
 
-    related_identifiers = [
+    # Self-identical links (HTML, MD, PDF)
+    self_related_identifiers = [
         {
-            "relation": "isIdenticalTo",
+            "relation": "isIdenticalTo",         # DataCite: IsIdenticalTo
             "identifier": site_html_url,
-            "resource_type": "publication-article",
+            "resource_type": "publication-article",  # DataCite: JournalArticle
         },
         {
             "relation": "isIdenticalTo",
@@ -723,6 +724,21 @@ def main():
             "resource_type": "publication-article",
         },
     ]
+
+    # Reference DOIs as related_identifiers:
+    #   relatedIdentifierType = DOI  (implicit from https://doi.org/…)
+    #   relationType          = Cites
+    #   resourceTypeGeneral   = JournalArticle -> "publication-article"
+    reference_related_identifiers = [
+        {
+            "relation": "cites",                 # DataCite: Cites
+            "identifier": ref_url,              # e.g. https://doi.org/...
+            "resource_type": "publication-article",
+        }
+        for ref_url in parsed["reference_doi_urls"]
+    ]
+
+    related_identifiers = self_related_identifiers + reference_related_identifiers
 
     zenodo_meta = {
         "upload_type": "publication",
@@ -784,14 +800,17 @@ def main():
             echo("  git commit ...")
             echo("  git push")
     echo("Zenodo:")
-    echo(f"  PUT /deposit/depositions/{dep_id} (metadata)")
+    echo(f"  PUT /deposit/depositions/{dep_id} (full metadata incl. related_identifiers)")
     echo("  PUT md, PDF, pandoc.md, html to bucket")
     echo("  POST /deposit/depositions/{id}/actions/publish")
+    echo(f"  GET /records/{dep_id} (fetch concept DOI)")
+    echo("  update provenance.yaml with concept DOI (optional, then commit)")
     echo("Git:")
     echo("  git checkout main")
     echo(f"  git merge --no-ff {branch_name}")
     echo("  git push origin main")
     echo(f"  git branch -d {branch_name}")
+
 
     # ---- confirmation ----
     ans = input("\nProceed with publication commit and DOI minting? [y/N]: ").strip().lower()
