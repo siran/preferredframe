@@ -11,11 +11,13 @@ Flow:
   1) Preflight: source & site repos clean (prompt to continue if dirty); create work branch (slugged)
   2) Stage copy of src.md into prints/_staging/<stem>/ and render (.pdf, .html, .pandoc.md)
   3) Parse PNPMD; scan ORCIDs & DOIs; normalize publication_date (ISO yyyy-mm-dd)
-  4) Reserve deposition; get DOI (& concept DOI if available)
-  5) Move rendered files to final path prints/<stem>/<doi_prefix>/<doi_suffix>/
-  6) Write full provenance (print it), then single confirmation
-  7) Commit site repo; copy PDF to assets repo & push; update Zenodo with FULL metadata; upload files; publish
-  8) Merge publish branch into main locally and push only main
+  4) Check for existing provenance for this stem; enforce commit policy & optional “new version” decision
+  5) Reserve deposition / DOI (single final metadata blob later)
+  6) Move rendered files to final path prints/<stem>/<doi_prefix>/<doi_suffix>/
+  7) Write full provenance (including Zenodo metadata) and show it
+  8) Show Zenodo metadata, file lists, and action plan; single confirmation
+  9) Commit site repo; copy PDF to assets repo & push; update Zenodo with FULL metadata; upload files; publish
+ 10) Merge publish branch into main locally and push only main
 """
 
 import io
@@ -90,6 +92,8 @@ def slug_branch(s: str) -> str:
     s = re.sub(r'[^a-z0-9._-]+', '-', s)
     s = re.sub(r'-{2,}', '-', s).strip('-')
     s = s.lstrip('.-')
+    if s.endswith('.back_sectionlock'):
+        s = s[:-5] + '-lock'
     if s.endswith('.lock'):
         s = s[:-5] + '-lock'
     return s[:80] or 'x'
@@ -97,7 +101,8 @@ def slug_branch(s: str) -> str:
 def git_repo_root(path: Path) -> Path:
     out = run(["git", "rev-parse", "--show-toplevel"], cwd=path)
     root = out.strip()
-    if not root: die("not inside a git repository")
+    if not root:
+        die("not inside a git repository")
     return Path(root)
 
 def git_status_clean(repo: Path) -> bool:
@@ -137,11 +142,12 @@ def http_put_raw(url: str, token: str, fp):
     headers = {"Authorization": f"Bearer {token}"}
     r = requests.put(url, data=fp, headers=headers)
     if not r.ok:
-        try: print(r.text)
-        except Exception: pass
+        try:
+            print(r.text)
+        except Exception:
+            pass
         die(f"Zenodo bucket PUT error {r.status_code} at {url}")
-    return r.json() if "application/json" in (r.headers.get("Content-Type","")) else {}
-
+    return r.json() if "application/json" in (r.headers.get("Content-Type", "")) else {}
 
 def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
     try:
@@ -152,13 +158,15 @@ def http_json(method: str, url: str, token: str, data=None, files=None) -> Dict:
     headers = {"Authorization": f"Bearer {token}"}
     print(f"{data=}")
     print(f"{files=}")
-    if method.upper() in ("POST","PUT","PATCH"):
+    if method.upper() in ("POST", "PUT", "PATCH"):
         r = requests.request(method, url, headers=headers, json=data, files=files)
     else:
         r = requests.request(method, url, headers=headers, params=data)
     if not r.ok:
-        try: echo(r.text)
-        except Exception: pass
+        try:
+            echo(r.text)
+        except Exception:
+            pass
         die(f"Zenodo API error {r.status_code} at {url}")
     try:
         return r.json()
@@ -181,19 +189,17 @@ def normalize_markdown_prose(md: str) -> str:
 
     def flush_buf():
         if buf:
-            # join wrapped lines into a single paragraph
             out.append(" ".join(x.strip() for x in buf if x.strip()))
             buf.clear()
 
     for line in lines:
-        if not line.strip():  # blank line → paragraph break
+        if not line.strip():
             flush_buf()
-            out.append("")  # represent blank paragraph
+            out.append("")
         else:
             buf.append(line)
     flush_buf()
 
-    # rejoin paragraphs with a blank line between them
     return "\n\n".join(out).strip()
 
 def replace_header_date(md_text: str, new_date_iso: str) -> str:
@@ -204,23 +210,20 @@ def replace_header_date(md_text: str, new_date_iso: str) -> str:
     lines = md_text.replace("\r\n", "\n").splitlines()
     long_date = format_long_date(new_date_iso)
 
-    # Find/replace within initial consecutive % lines (<= 3 expected)
     head_count = 0
     out = []
     i = 0
     while i < len(lines) and lines[i].lstrip().startswith("%"):
         head_count += 1
         if head_count == 3:
-            out.append(f"% {long_date}")      # replace date line
+            out.append(f"% {long_date}")
         else:
-            out.append(lines[i])              # keep title/authors
+            out.append(lines[i])
         i += 1
 
-    # If there were < 3 header lines, insert the date line now
     if head_count < 3:
         out.append(f"% {long_date}")
 
-    # Append the rest of the document body
     out.extend(lines[i:])
     return "\n".join(out)
 
@@ -271,9 +274,7 @@ def _stringify_blocks(blocks) -> str:
     blks = list(blocks)
     if not blks:
         return ""
-    # Wrap list of blocks into a single Element so stringify can walk it
     return pf.stringify(pf.Div(*blks)).strip()
-
 
 def _extract_about_authors(items) -> List[Dict[str, str]]:
     authors = []
@@ -282,7 +283,6 @@ def _extract_about_authors(items) -> List[Dict[str, str]]:
         if not text:
             continue
 
-        # Name = text up to first comma (keeps commas later intact)
         name = text.split(",", 1)[0].strip()
 
         m_email = EMAIL_RE.search(text)
@@ -305,7 +305,6 @@ def _extract_about_authors(items) -> List[Dict[str, str]]:
     return authors
 
 def _pandoc_doc(md_text: str) -> pf.Doc:
-    # get Pandoc JSON from markdown
     p = subprocess.run(
         ["pandoc", "-f", "markdown+tex_math_dollars", "-t", "json"],
         input=md_text.encode("utf-8"),
@@ -313,96 +312,75 @@ def _pandoc_doc(md_text: str) -> pf.Doc:
         stderr=subprocess.PIPE,
         check=True
     )
-    ast = json.loads(p.stdout)  # dict
-    # feed a *stream* to panflute.load
+    ast = json.loads(p.stdout)
     return pf.load(io.StringIO(json.dumps(ast)))
 
 def parse_pnpmd(md_text: str) -> Dict:
     """
     Parse PNPMD with Pandoc → Pandoc JSON → panflute.Doc
-    Works even if convert_text returns list instead of Doc.
     """
-    # Load panflute Doc (Pandoc is called inside _pandoc_doc)
     doc = _pandoc_doc(md_text)
     meta = doc.get_metadata()
-    # --- after reading meta = doc.get_metadata() ---
 
     def _meta_str(x):
         return x if isinstance(x, str) else pf.stringify(x) if x is not None else ""
 
     def _split_header_authors(s: str) -> List[str]:
-        """
-        Split a single author line like 'A, B and C' → ['A','B','C'].
-        Conservative: split on ' and ' or commas not inside parentheses.
-        """
-        # prefer ' and ' and ';'
         parts = re.split(r'\s+\band\b\s+|;', s)
         if len(parts) == 1:
-            # fallback: commas not inside parentheses
             parts = re.split(r',(?![^()]*\))', s)
         return [p.strip() for p in parts if p.strip()]
 
-    meta = doc.get_metadata()
-    title = meta.get("title", "")
-    pub_date = meta.get("date", "")
+    title = _meta_str(meta.get("title", ""))
+    pub_date = _meta_str(meta.get("date", ""))
 
     raw_auth = meta.get("author")
     if isinstance(raw_auth, list):
-        # some pandoc versions put a single combined string in a 1-item list
         if len(raw_auth) == 1 and isinstance(raw_auth[0], str):
             header_authors = _split_header_authors(raw_auth[0])
         else:
             header_authors = [_meta_str(a) for a in raw_auth]
     elif isinstance(raw_auth, str):
         header_authors = _split_header_authors(raw_auth)
+    else:
+        header_authors = []
 
-
-    # Title / date
-    def _meta_str(x):
-        return x if isinstance(x, str) else pf.stringify(x) if x is not None else ""
-    title = _meta_str(meta.get("title", ""))
-    pub_date = _meta_str(meta.get("date", ""))
-
-    # Sections
     one_sentence = _stringify_blocks(_collect_section(doc, "One-Sentence Summary")).strip()
     abstract     = _stringify_blocks(_collect_section(doc, "Abstract")).strip()
     kb_text      = _stringify_blocks(_collect_section(doc, "Keywords"))
     about_blocks = _collect_section(doc, "About Author(s)")
     refs_blocks  = _collect_section(doc, "References")
 
-    # Keywords: first non-empty line, comma-separated
     first_line = next((ln.strip() for ln in kb_text.splitlines() if ln.strip()), "")
     keywords = [k.strip() for k in first_line.split(",") if k.strip()] if first_line else []
 
-    # About authors (list items or paragraphs)
     about_items = list(_listish(about_blocks))
     about_parsed = _extract_about_authors(about_items)
     about_index = {_key(a["name"]): a for a in about_parsed}
 
-    # Merge: preserve header order; enrich from About
     merged = []
     seen = set()
     for nm in header_authors:
         k = _key(nm)
         if k in about_index:
-            e = dict(about_index[k]); e["name"] = nm
-            merged.append(e); seen.add(k)
+            e = dict(about_index[k])
+            e["name"] = nm
+            merged.append(e)
+            seen.add(k)
         else:
-            merged.append({"name": nm}); seen.add(k)
+            merged.append({"name": nm})
+            seen.add(k)
     for k, e in about_index.items():
         if k not in seen:
             merged.append(e)
 
-    # Fallback: if no authors at all but meta has a single string
     if not merged and header_authors:
         merged = [{"name": nm} for nm in header_authors]
 
-    # Reference DOIs: scan the References section only (then de-dup)
     refs_text = _stringify_blocks(refs_blocks)
     ref_dois = sorted({m.group(0).rstrip('.,);:]') for m in DOI_RE.finditer(refs_text)})
     reference_doi_urls = [f"https://doi.org/{d}" for d in ref_dois]
 
-    # Global ORCIDs (optional: may help fill a missing one)
     full_text = pf.stringify(doc)
     global_orcids = sorted({
         _norm_orcid(m.group(1)) for m in ORCID_URL_RE.finditer(full_text)
@@ -418,25 +396,30 @@ def parse_pnpmd(md_text: str) -> Dict:
         "one_sentence": one_sentence,
         "abstract": abstract,
         "keywords": keywords,
-        "authors": merged,                 # [{name, orcid?, email?}]
-        "reference_doi_urls": reference_doi_urls
+        "authors": merged,
+        "reference_doi_urls": reference_doi_urls,
     }
 
 
 # ---- date normalization ----
 MONTHS = {m.lower(): i for i, m in enumerate(
-    ["January","February","March","April","May","June","July","August","September","October","November","December"], 1)}
+    ["January","February","March","April","May","June",
+     "July","August","September","October","November","December"], 1)}
 
 def _try_parse_date(s: str) -> Optional[datetime]:
     s = s.strip()
-    fmts = ["%Y-%m-%d","%Y/%m/%d","%Y-%m","%Y/%m","%Y","%B %Y","%b %Y","%B %d, %Y","%b %d, %Y","%d %B %Y","%d %b %Y"]
+    fmts = ["%Y-%m-%d","%Y/%m/%d","%Y-%m","%Y/%m","%Y",
+            "%B %Y","%b %Y","%B %d, %Y","%b %d, %Y","%d %B %Y","%d %b %Y"]
     for fmt in fmts:
-        try: return datetime.strptime(s, fmt)
-        except Exception: pass
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            pass
     m = re.match(r'^\s*([A-Za-z]+)\s+(\d{4})\s*$', s)
     if m:
         mon = MONTHS.get(m.group(1).lower()); yr = int(m.group(2))
-        if mon: return datetime(yr, mon, 1)
+        if mon:
+            return datetime(yr, mon, 1)
     return None
 
 # ---------------- steps ----------------
@@ -458,7 +441,6 @@ def render_in_staging(site_repo: Path, src_md: Path, publication_date_iso: str) 
 
     staged_md = dst_md
 
-    # Replace header date in the staged markdown
     md_text = dst_md.read_text(encoding="utf-8")
     md_text = replace_header_date(md_text, publication_date_iso)
     dst_md.write_text(md_text, encoding="utf-8")
@@ -473,65 +455,60 @@ def render_in_staging(site_repo: Path, src_md: Path, publication_date_iso: str) 
     dst_html = dst_md.with_suffix(".html")
     dst_pmd  = dst_md.with_suffix(".pandoc.md")
     for p in (dst_pdf, dst_html, dst_pmd):
-        if not p.exists(): die(f"Expected artifact missing after render: {p}")
+        if not p.exists():
+            die(f"Expected artifact missing after render: {p}")
     return staging, dst_md, dst_pdf, dst_html
 
 def reserve_deposition(api: str, token: str,
-                       title: str, creators: List[Dict], abstract: str,
-                       one_sentence: str, keywords: List[str],
-                       publication_date: str, publication_year: str, site_html_url: str,
-                       site_md_url: str, assets_pdf_url: str,
+                       title: str, creators: List[Dict],
+                       publication_year: str,
                        community: str, journal: str) -> Tuple[int, str, Optional[str]]:
+    """
+    Reserve a DOI on Zenodo with minimal metadata + prereserve_doi.
+    Full metadata is sent later once final paths are known.
+    """
     dep = http_json("POST", f"{api}/deposit/depositions", token, data={})
     dep_id = dep.get("id")
-    if not dep_id: die("Could not create deposition (no id).")
+    if not dep_id:
+        die("Could not create deposition (no id).")
 
-    related_identifiers = [
-        {"relation": "isIdenticalTo", "identifier": site_html_url,  "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": site_md_url,    "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
-    ]
-
-    zenodo_meta = {
+    minimal_meta = {
         "upload_type": "publication",
         "publication_type": "article",
         "title": title,
         "creators": creators,
-        "description": normalize_markdown_prose(abstract),
-        "notes": normalize_markdown_prose(one_sentence),
-        "keywords": keywords,
         "journal_title": journal,
         "publisher": {"name": journal},
         "publication_year": publication_year,
-        "date": publication_date,
-        "license": "cc-by-4.0",
-        "related_identifiers": related_identifiers,
         "communities": [{"identifier": community}],
-        "prereserve_doi": True
+        "prereserve_doi": True,
     }
-    dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token, data={"metadata": zenodo_meta})
-    pr = (dep.get("metadata")).get("prereserve_doi")
+
+    dep = http_json("PUT", f"{api}/deposit/depositions/{dep_id}", token,
+                    data={"metadata": minimal_meta})
+    pr = (dep.get("metadata") or {}).get("prereserve_doi") or {}
     reserved_doi = pr.get("doi")
-    concept_doi = pr.get("conceptdoi")  # may be missing in sandbox or certain flows
+    concept_doi = pr.get("conceptdoi")
+    if not reserved_doi:
+        die("Zenodo did not return a reserved DOI.")
     return dep_id, reserved_doi, concept_doi
 
 def dump_yaml(obj) -> str:
     return yaml.dump(
         obj,
-        Dumper=PFYamlDumper,   # our custom SafeDumper subclass
+        Dumper=PFYamlDumper,
         sort_keys=False,
         allow_unicode=True,
         width=1000,
         default_flow_style=False,
     )
 
-
 def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path, dst_pmd: Path,
                      src_origin: str, src_commit: str,
                      title: str, creators: List[Dict], parsed: Dict,
                      publication_date: str, publication_year: str, doi: str, concept_doi: Optional[str],
-                     assets_pdf_url: str, site_html_url: str, site_md_url:str, site_pandoc_md_url:str,
-                     version_permalink: str) -> Path:
+                     assets_pdf_url: str, site_html_url: str, site_md_url: str, site_pandoc_md_url: str,
+                     version_permalink: str, zenodo_metadata: Dict) -> Path:
 
     prov = {
         "journal": "Preferred Frame",
@@ -547,6 +524,7 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
         "abstract": normalize_markdown_prose(parsed["abstract"]),
         "authors": creators,
         "references_doi": parsed["reference_doi_urls"],
+        "zenodo_metadata": zenodo_metadata,
         "source": {
             "repo_origin": src_origin,
             "commit": src_commit,
@@ -578,16 +556,43 @@ def list_files(api: str, token: str, dep_id: int) -> List[Dict]:
 
 def ensure_draft_or_die(api: str, token: str, dep_id: int) -> Dict:
     dep = get_deposition(api, token, dep_id)
-    state = dep.get("state")          # "unsubmitted" or "inprogress" are drafts
-    submitted = dep.get("submitted")        # True after submit
-    links = dep.get("links")
+    state = dep.get("state")
+    submitted = dep.get("submitted")
+    links = dep.get("links") or {}
     bucket = links.get("bucket")
     can_upload = (submitted in (False, None)) and bool(bucket)
     if not can_upload:
         echo(f"\nZenodo deposition {dep_id} is not modifiable via bucket:")
         echo(f"  state={state!r}, submitted={submitted!r}, has_bucket={bool(bucket)}")
         die("Cannot upload: need a draft with a bucket link. Create a new version or unlock draft.")
-    return dep  # includes links.bucket
+    return dep
+
+def find_latest_provenance_for_stem(site_repo: Path, stem: str) -> Tuple[Optional[Path], Optional[Dict]]:
+    """
+    Return (provenance_path, provenance_data) for the latest known
+    publication of this stem, or (None, None) if none exists.
+    """
+    base = site_repo / "prints" / stem
+    if not base.exists():
+        return None, None
+
+    provs: List[Tuple[Path, Dict]] = []
+    for p in base.rglob("provenance.yaml"):
+        try:
+            data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            provs.append((p, data))
+        except Exception:
+            continue
+
+    if not provs:
+        return None, None
+
+    def prov_key(item):
+        p, d = item
+        return (d.get("publication_date", ""), str(p))
+
+    provs.sort(key=prov_key)
+    return provs[-1]
 
 def main():
     import argparse
@@ -603,29 +608,52 @@ def main():
     ap.add_argument("--no-assets-push", action="store_true", help="Do not push the assets repo (default: push).")
     args = ap.parse_args()
 
-    # Hard gate for production to avoid accidental live publishes
     if args.env == "prod":
         confirm = input("WARNING: --env=prod will publish to LIVE Zenodo. Type 'prod' to continue: ").strip()
         if confirm != "prod":
             die("Aborting: production environment not confirmed.")
 
-    # ---- repos & preflight ----
     src_md = Path(args.md_path).resolve()
     src_repo = git_repo_root(src_md.parent)
     if not git_status_clean(src_repo):
         input(f"Source repo has uncommitted changes: {src_repo}. Press Enter to continue or Ctrl-C to abort.")
-    src_commit = git_head(src_repo); src_origin = git_origin_url(src_repo)
+    src_commit = git_head(src_repo)
+    src_origin = git_origin_url(src_repo)
 
     site_repo = git_repo_root(Path.cwd())
     if not git_status_clean(site_repo):
         input(f"Site repo has uncommitted changes: {site_repo}. Press Enter to continue or Ctrl-C to abort.")
 
-    # Publication date (today)
-    publication_date_iso = date.today().isoformat()   # e.g. '2025-01-25'
+    publication_date_iso = date.today().isoformat()
     publication_year = publication_date_iso[0:4]
     publication_date = publication_date_iso
 
     stem = src_md.stem
+
+    # ---- existing publication check for this stem ----
+    prov_path_prev, prov_prev = find_latest_provenance_for_stem(site_repo, stem)
+
+    if prov_prev:
+        prev_source = prov_prev.get("source") or {}
+        prev_commit = (prev_source.get("commit") or "").strip()
+        prev_doi    = (prov_prev.get("doi") or "").strip()
+        prev_concept = prov_prev.get("concept_doi")
+
+        if prev_commit and prev_commit == src_commit:
+            die(f"This commit has already been published as DOI {prev_doi or '(unknown)'}.")
+
+        echo(f"Found previous publication for stem '{stem}':")
+        echo(f" - provenance: {prov_path_prev}")
+        echo(f" - DOI:        {prev_doi or '(none)'}")
+        echo(f" - concept_doi:{prev_concept or '(none)'}")
+        echo(f" - commit:     {prev_commit or '(unknown)'}")
+
+        ans_ver = input(f"Treat this as a new version of the latest one? [y/N]: ").strip().lower()
+        if ans_ver not in ("y", "yes"):
+            die(f"a document named '{stem}' already has been published")
+
+    # Remember original branch
+    orig_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=site_repo).strip()
 
     # ---- branch ----
     branch_name = prepare_branch(site_repo, stem, src_commit)
@@ -634,9 +662,9 @@ def main():
     staging, staged_md, staged_pdf, staged_html = render_in_staging(site_repo, src_md, publication_date_iso)
     staged_pmd = staged_md.with_suffix(".pandoc.md")
 
-    # ---- parse PNPMD & normalized date ----
+    # ---- parse PNPMD ----
     parsed = parse_pnpmd(staged_md.read_text(encoding="utf-8"))
-    creators = []
+    creators: List[Dict] = []
     for a in parsed["authors"]:
         if not a.get("name"):
             continue
@@ -647,89 +675,161 @@ def main():
         })
     title = parsed["title"]
 
-    # ---- site URLs (temporary; corrected after final move) ----
-    tmp_html_url = f"https://preferredframe.com/prints/_staging/{stem}/{staged_html.name}"
-    tmp_md_url   = f"https://preferredframe.com/prints/_staging/{stem}/{staged_md.name}"
-    # temporary assets URL (will be recomputed after DOI)
-    tmp_assets_pdf_url = f"{args.assets_base_url}/preferredframe/_staging/{stem}/{staged_pdf.name}"
-
-    # ---- Zenodo API (env-aware) ----
+    # ---- Zenodo API & DOI reservation ----
     api, token = zenodo_api_and_token(args.env)
-    dep_id, reserved_doi, concept_doi = reserve_deposition(
-        api, token,
-        title, creators, parsed["abstract"], parsed["one_sentence"], parsed["keywords"],
-        publication_date, publication_year, tmp_html_url, tmp_md_url, tmp_assets_pdf_url,
-        args.community, args.journal
+    dep_id, doi, concept_doi = reserve_deposition(
+        api, token, title, creators, publication_year, args.community, args.journal
     )
-    doi = reserved_doi
 
-    # ---- final destination based on FULL DOI path ----
-    # e.g., doi = "10.5281/zenodo.398094" -> prefix "10.5281", suffix "zenodo.398094"
+    # ---- final destination based on DOI path ----
     if "/" in doi:
         doi_prefix, doi_suffix = doi.split("/", 1)
     else:
-        die("no / in reserved DOI?")
-        # doi_prefix, doi_suffix = "10.xxxx", (doi or "x")
+        die("Reserved DOI has no '/'?")
+
     final_dir = site_repo / "prints" / stem / doi_prefix / doi_suffix
     final_dir.mkdir(parents=True, exist_ok=True)
 
-    # move files into final place
     final_md   = final_dir / staged_md.name
     final_pdf  = final_dir / staged_pdf.name
     final_html = final_dir / staged_html.name
     final_pmd  = final_dir / staged_pmd.name
-    for src, dst in [(staged_md, final_md),(staged_pdf, final_pdf),
-                     (staged_html, final_html),(staged_pmd, final_pmd)]:
+    for src, dst in [
+        (staged_md, final_md),
+        (staged_pdf, final_pdf),
+        (staged_html, final_html),
+        (staged_pmd, final_pmd),
+    ]:
         echo(f"+ move {src} -> {dst}")
         shutil.move(str(src), str(dst))
 
-    # cleanup staging dir (best-effort)
     try:
         shutil.rmtree(staging)
     except Exception:
         pass
 
-    # corrected site URLs (for provenance + Zenodo related_identifiers)
     site_html_url = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_html.name}"
     site_md_url   = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_md.name}"
-    site_pandoc_md_url   = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_pmd.name}"
-    version_permalink = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/"
+    site_pandoc_md_url = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/{final_pmd.name}"
+    version_permalink  = f"https://preferredframe.com/prints/{stem}/{doi_prefix}/{doi_suffix}/"
+    assets_pdf_url     = f"{args.assets_base_url}/preferredframe/{stem}/{doi_prefix}/{doi_suffix}/{final_pdf.name}"
 
-    # FINAL assets URL mirrors prints/ (no date folder)
-    assets_pdf_url = f"{args.assets_base_url}/preferredframe/{stem}/{doi_prefix}/{doi_suffix}/{final_pdf.name}"
+    related_identifiers = [
+        {"relation": "isIdenticalTo", "identifier": site_html_url,  "resource_type": "publication"},
+        {"relation": "isIdenticalTo", "identifier": site_md_url,    "resource_type": "publication"},
+        {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
+    ]
 
-    # ---- write FULL provenance (then show it) ----
-    prov_path = write_provenance(final_dir, final_md, final_pdf, final_html, final_pmd,
-                                 src_origin, src_commit,
-                                 title, creators, parsed, publication_date, publication_year,
-                                 doi, concept_doi, assets_pdf_url, site_html_url,
-                                 site_md_url, site_pandoc_md_url, version_permalink)
+    zenodo_meta = {
+        "upload_type": "publication",
+        "publication_type": "article",
+        "title": title,
+        "creators": creators,
+        "description": normalize_markdown_prose(parsed["abstract"]),
+        "notes": normalize_markdown_prose(parsed["one_sentence"]),
+        "keywords": parsed["keywords"],
+        "journal_title": args.journal,
+        "publisher": {"name": args.journal},
+        "publication_year": publication_year,
+        "date": publication_date,
+        "license": "cc-by-4.0",
+        "related_identifiers": related_identifiers,
+        "communities": [{"identifier": args.community}],
+        "prereserve_doi": True,
+    }
 
+    # ---- write FULL provenance (includes Zenodo metadata) ----
+    prov_path = write_provenance(
+        final_dir, final_md, final_pdf, final_html, final_pmd,
+        src_origin, src_commit,
+        title, creators, parsed, publication_date, publication_year,
+        doi, concept_doi, assets_pdf_url, site_html_url,
+        site_md_url, site_pandoc_md_url, version_permalink,
+        zenodo_metadata=zenodo_meta,
+    )
+
+    # ---- preview ----
     echo("\n--- PROVENANCE ---")
     print(prov_path)
     with open(prov_path, "r", encoding="utf-8") as f:
         print(f.read(), end="")
 
-    # ---- summary before confirmation ----
+    echo("\n--- ZENODO METADATA (preview) ---")
+    print(json.dumps(zenodo_meta, indent=2, ensure_ascii=False))
+
     echo("\n--- FILES TO COMMIT (site repo) ---")
     for p in [final_md, final_html, final_pmd, prov_path]:
         echo(f" - {p.relative_to(site_repo)}")
+
     echo("\n--- FILES TO UPLOAD TO ZENODO ---")
     for p in [final_pdf, final_md, final_pmd, final_html]:
         echo(f" - {p.name}")
 
-    # ---- single confirmation ----
+    echo("\n--- PREVIEW: ACTIONS AFTER CONFIRMATION ---")
+    echo("Site repo:")
+    echo(f"  git add {final_md.relative_to(site_repo)}")
+    echo(f"  git add {final_html.relative_to(site_repo)}")
+    echo(f"  git add {final_pmd.relative_to(site_repo)}")
+    echo(f"  git add {prov_path.relative_to(site_repo)}")
+    echo("  git commit ...")
+    if args.assets_dir:
+        echo("Assets repo:")
+        echo(f"  copy {final_pdf} -> {args.assets_dir}/preferredframe/{stem}/{doi_prefix}/{doi_suffix}/{final_pdf.name}")
+        echo("  git add <that pdf>")
+        if not args.no_assets_push:
+            echo("  git commit ...")
+            echo("  git push")
+    echo("Zenodo:")
+    echo(f"  PUT /deposit/depositions/{dep_id} (metadata)")
+    echo("  PUT PDF, md, pandoc.md, html to bucket")
+    echo("  POST /deposit/depositions/{id}/actions/publish")
+    echo("Git:")
+    echo("  git checkout main")
+    echo(f"  git merge --no-ff {branch_name}")
+    echo("  git push origin main")
+    echo(f"  git branch -d {branch_name}")
+
+    # ---- confirmation ----
     ans = input("\nProceed with publication commit and DOI minting? [y/N]: ").strip().lower()
-    if ans not in ("y","yes"):
+    if ans not in ("y", "yes"):
+        echo("Aborting; cleaning up Zenodo draft, git branch, and files.")
+
+        # delete Zenodo deposition (best-effort)
+        try:
+            http_json("DELETE", f"{api}/deposit/depositions/{dep_id}", token, data=None)
+        except Exception:
+            echo("WARNING: Failed to delete Zenodo deposition. Please check manually.")
+
+        # remove final_dir files from site repo
+        try:
+            shutil.rmtree(final_dir)
+        except Exception:
+            echo(f"WARNING: Failed to remove {final_dir}; please clean manually.")
+
+        # restore original branch and delete publish branch
+        try:
+            if orig_branch and orig_branch != branch_name:
+                run(["git", "checkout", orig_branch], cwd=site_repo)
+            if branch_name:
+                run(["git", "branch", "-D", branch_name], cwd=site_repo)
+        except Exception:
+            echo("WARNING: Failed to clean git branches; please resolve manually.")
+
         sys.exit(0)
 
     # ---- commit site repo ----
-    run(["git", "add", str(final_md)], cwd=site_repo)
-    run(["git", "add", str(final_html)], cwd=site_repo)
-    run(["git", "add", str(final_pmd)], cwd=site_repo)
-    run(["git", "add", str(prov_path)], cwd=site_repo)
+    rel_md   = str(final_md.relative_to(site_repo))
+    rel_html = str(final_html.relative_to(site_repo))
+    rel_pmd  = str(final_pmd.relative_to(site_repo))
+    rel_prov = str(prov_path.relative_to(site_repo))
+
+    run(["git", "add", rel_md],   cwd=site_repo)
+    run(["git", "add", rel_html], cwd=site_repo)
+    run(["git", "add", rel_pmd],  cwd=site_repo)
+    run(["git", "add", rel_prov], cwd=site_repo)
     run(["git", "commit", "-m",
-         f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{final_md.stem}'"], cwd=site_repo)
+         f"Publish print: {title} ({publication_date}); source {src_commit[:10]} as '{final_md.stem}'"],
+        cwd=site_repo)
 
     # ---- copy PDF to assets repo & push (default ON) ----
     if args.assets_dir:
@@ -740,62 +840,39 @@ def main():
         dest.parent.mkdir(parents=True, exist_ok=True)
         echo(f"+ copy {final_pdf} -> {dest}")
         shutil.copy2(final_pdf, dest)
+
+        rel_dest = os.path.relpath(dest, assets_repo)
+        run(["git", "add", rel_dest], cwd=assets_repo)
         if not args.no_assets_push:
-            run(["git", "add", "-A"], cwd=assets_repo)
             run(["git", "commit", "-m", f"{title}.pdf ({publication_date}, {doi})"], cwd=assets_repo)
             run(["git", "push"], cwd=assets_repo)
 
-    # ---- rebuild FULL metadata (same as reservation) + final related_identifiers ----
-    final_related = [
-        {"relation": "isIdenticalTo", "identifier": site_html_url,  "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": site_md_url,    "resource_type": "publication"},
-        {"relation": "isIdenticalTo", "identifier": assets_pdf_url, "resource_type": "publication"},
-    ]
-
-    full_meta = {
-        "upload_type": "publication",
-        "publication_type": "article",
-        "title":                       title,
-        "creators":                    creators,
-        "description":                 normalize_markdown_prose(parsed["abstract"]),
-        "notes":                       normalize_markdown_prose(parsed["one_sentence"]),
-        "keywords":                    parsed["keywords"],
-        "journal_title":               args.journal,
-        "publication_date":            publication_date,
-        "license":                     "cc-by-4.0",
-        "related_identifiers":         final_related,
-        "communities":                 [{"identifier": args.community}],
-        "prereserve_doi":              True,
-    }
-
+    # ---- apply final metadata to Zenodo ----
     _ = http_json(
         "PUT",
         f"{api}/deposit/depositions/{dep_id}",
         token,
-        data={"metadata": full_meta}
+        data={"metadata": zenodo_meta}
     )
 
-    # ---- upload to Zenodo via bucket (overwrites by name) & publish ----
+    # ---- upload to Zenodo via bucket & publish ----
     dep = ensure_draft_or_die(api, token, dep_id)
-    bucket_url = (dep.get("links")).get("bucket")
+    bucket_url = (dep.get("links") or {}).get("bucket")
     if not bucket_url:
         die("Draft has no bucket link; cannot upload.")
 
-    # push artifacts (order: PDF, md, pandoc.md, html)
+    from urllib.parse import quote
+
     for path in [final_pdf, final_md, final_pmd, final_html]:
         fname = path.name
-        # Zenodo requires URL-escaped filename segment
-        from urllib.parse import quote
         put_url = f"{bucket_url}/{quote(fname)}"
         with open(path, "rb") as fh:
             http_put_raw(put_url, token, fh)
-
         print("sleeping 1")
         time.sleep(1)
 
     _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
 
-    # ---- merge publish branch into main locally, then push only main ----
     run(["git", "checkout", "main"], cwd=site_repo)
     run(["git", "merge", "--no-ff", branch_name], cwd=site_repo)
     run(["git", "push", "origin", "main"], cwd=site_repo)
