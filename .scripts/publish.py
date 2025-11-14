@@ -115,11 +115,11 @@ def git_origin_url(repo: Path) -> str:
 def zenodo_api_and_token(env: str) -> Tuple[str, str]:
     """
     Resolve Zenodo API base + token from the selected environment.
-    - requires ZENODO_TOKEN, ZENODO_API
+    - requires ZENODO_TOKEN, ZENODO_API / ZENODO_SANDBOX_API
     """
     token = os.environ.get("ZENODO_TOKEN")
     if not token:
-        die("Missing ZENODO_TOKEN for --env prod.")
+        die("Missing ZENODO_TOKEN for Zenodo API.")
 
     api = os.environ.get("ZENODO_SANDBOX_API", "https://sandbox.zenodo.org/api")
     if env == "prod":
@@ -305,7 +305,7 @@ def _extract_about_authors(items) -> List[Dict[str, str]]:
     return authors
 
 def _pandoc_doc(md_text: str) -> pf.Doc:
-    # get Pandoc JSON
+    # get Pandoc JSON from markdown
     p = subprocess.run(
         ["pandoc", "-f", "markdown+tex_math_dollars", "-t", "json"],
         input=md_text.encode("utf-8"),
@@ -313,7 +313,7 @@ def _pandoc_doc(md_text: str) -> pf.Doc:
         stderr=subprocess.PIPE,
         check=True
     )
-    ast = json.loads(p.stdout)                 # <-- dict
+    ast = json.loads(p.stdout)  # dict
     # feed a *stream* to panflute.load
     return pf.load(io.StringIO(json.dumps(ast)))
 
@@ -322,16 +322,7 @@ def parse_pnpmd(md_text: str) -> Dict:
     Parse PNPMD with Pandoc → Pandoc JSON → panflute.Doc
     Works even if convert_text returns list instead of Doc.
     """
-    # Call Pandoc manually and capture JSON
-    p = subprocess.run(
-        ["pandoc", "-f", "markdown+tex_math_dollars", "-t", "json"],
-        input=md_text.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True
-    )
-
-    # Load panflute Doc
+    # Load panflute Doc (Pandoc is called inside _pandoc_doc)
     doc = _pandoc_doc(md_text)
     meta = doc.get_metadata()
     # --- after reading meta = doc.get_metadata() ---
@@ -538,7 +529,7 @@ def dump_yaml(obj) -> str:
 def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path, dst_pmd: Path,
                      src_origin: str, src_commit: str,
                      title: str, creators: List[Dict], parsed: Dict,
-                     publication_date: str, creation_date: str, doi: str, concept_doi: Optional[str],
+                     publication_date: str, publication_year: str, doi: str, concept_doi: Optional[str],
                      assets_pdf_url: str, site_html_url: str, site_md_url:str, site_pandoc_md_url:str,
                      version_permalink: str) -> Path:
 
@@ -550,7 +541,7 @@ def write_provenance(dst_dir: Path, dst_md: Path, dst_pdf: Path, dst_html: Path,
         "concept_doi": concept_doi,
         "permalink": version_permalink,
         "publication_date": publication_date,
-        "creation_date": creation_date,
+        "publication_year": publication_year,
         "keywords": parsed["keywords"],
         "one_sentence_summary": normalize_markdown_prose(parsed["one_sentence"]),
         "abstract": normalize_markdown_prose(parsed["abstract"]),
@@ -612,6 +603,12 @@ def main():
     ap.add_argument("--no-assets-push", action="store_true", help="Do not push the assets repo (default: push).")
     args = ap.parse_args()
 
+    # Hard gate for production to avoid accidental live publishes
+    if args.env == "prod":
+        confirm = input("WARNING: --env=prod will publish to LIVE Zenodo. Type 'prod' to continue: ").strip()
+        if confirm != "prod":
+            die("Aborting: production environment not confirmed.")
+
     # ---- repos & preflight ----
     src_md = Path(args.md_path).resolve()
     src_repo = git_repo_root(src_md.parent)
@@ -626,6 +623,7 @@ def main():
     # Publication date (today)
     publication_date_iso = date.today().isoformat()   # e.g. '2025-01-25'
     publication_year = publication_date_iso[0:4]
+    publication_date = publication_date_iso
 
     stem = src_md.stem
 
@@ -648,17 +646,6 @@ def main():
             **({"email": a["email"]} if a.get("email") else {}),
         })
     title = parsed["title"]
-
-
-
-
-    # Replace header date in the staged markdown
-    md_text = staged_md.read_text(encoding="utf-8")
-    md_text = replace_header_date(md_text, publication_date_iso)
-    staged_md.write_text(md_text, encoding="utf-8")
-
-    # Make "creation_date" equal to publication date (as requested)
-    publication_date = publication_date_iso
 
     # ---- site URLs (temporary; corrected after final move) ----
     tmp_html_url = f"https://preferredframe.com/prints/_staging/{stem}/{staged_html.name}"
@@ -788,10 +775,9 @@ def main():
         data={"metadata": full_meta}
     )
 
-
     # ---- upload to Zenodo via bucket (overwrites by name) & publish ----
     dep = ensure_draft_or_die(api, token, dep_id)
-    bucket_url = (dep.get("links") ).get("bucket")
+    bucket_url = (dep.get("links")).get("bucket")
     if not bucket_url:
         die("Draft has no bucket link; cannot upload.")
 
@@ -804,10 +790,8 @@ def main():
         with open(path, "rb") as fh:
             http_put_raw(put_url, token, fh)
 
-
         print("sleeping 1")
         time.sleep(1)
-
 
     _published = http_json("POST", f"{api}/deposit/depositions/{dep_id}/actions/publish", token)
 
