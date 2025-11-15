@@ -850,12 +850,7 @@ def build_sitemap_and_robots():
 
     robots = (
         "User-agent: *\n"
-        "Disallow: /\n"
-        "Allow: /prints/\n"
-        "Allow: /index.html\n"
-        "Allow: /sitemap.xml\n"
-        "Allow: /robots.txt\n"
-        "Allow: /rss.xml\n"
+        "Allow: /\n"
         f"Sitemap: {origin}/sitemap.xml\n"
     )
     (OUT / "robots.txt").write_text(robots, encoding="utf-8")
