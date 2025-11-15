@@ -843,7 +843,8 @@ def build_rss_feed():
 
         dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
         keep = by_stem.get(stem)
-        if not keep or dt > keep["dt"]:
+        # kept date is stored under "date", not "dt"
+        if not keep or dt > keep["date"]:
             by_stem[stem] = {
                 "stem": stem,
                 "title": title,
@@ -854,6 +855,7 @@ def build_rss_feed():
                 "url": item_url,
                 "doi": doi,
             }
+
 
     fg = FeedGenerator()
     fg.load_extension('podcast')
