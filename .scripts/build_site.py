@@ -16,7 +16,17 @@ EXCLUDE_NAMES = {
     "Makefile","index.html","_staging", "pnpmd.map", "requirements.txt",
     "gpt5push.sh"
 }
-MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
+MIRROR_EXTS = {
+    ".md",          # raw Markdown
+    ".markdown",    # alt Markdown extension
+    ".html",        # pre-rendered HTML
+    ".htm",         # rare but safe
+    ".yaml",        # provenance + metadata
+    ".yml",
+    ".pandoc.md",   # the PNP preprocessed markdown
+    ".txt",         # plain text files
+}
+
 PREFERRED_JOURNAL = "Preferred Frame"
 
 # ---------- repo autodetect ----------
@@ -190,6 +200,52 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
 
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(doc, encoding="utf-8")
+
+def build_simple_page_from_md(src_name: str, slug: str, title: str):
+    """
+    Build a simple content page from a Markdown file at ROOT/src_name,
+    into site/<slug>/index.html, using the normal header/footer.
+    """
+    src_md = ROOT / src_name
+    if not src_md.exists():
+        return
+
+    md = src_md.read_text(encoding="utf-8")
+
+    # Try to render Markdown → HTML via pandoc; fall back to plain text if missing.
+    try:
+        p = subprocess.run(
+            ["pandoc", "-f", "markdown", "-t", "html"],
+            input=md.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        full_html = p.stdout.decode("utf-8")
+        html_body = extract_html_body(full_html) or full_html
+    except Exception:
+        # fallback: raw markdown, escaped
+        html_body = md.replace("&", "&amp;").replace("<", "&lt;")
+
+    body = "<main class='page'>\n" + html_body + "\n</main>"
+
+    page_url = f"{BASE_URL}/{slug}/"
+    head = [
+        '<meta charset="UTF-8">',
+        f'<link rel="canonical" href="{page_url}">',
+        '<meta name="robots" content="index,follow">',
+        f'<meta name="description" content="Preferred Frame — {title}">',
+        '<meta property="og:type" content="website">',
+        f'<meta property="og:title" content="{title}">',
+        f'<meta property="og:url" content="{page_url}">',
+        '<meta property="og:site_name" content="Preferred Frame">',
+    ]
+    head_extra = "\n".join(head) + "\n"
+
+    out_dir = OUT / slug
+    out_html = out_dir / "index.html"
+    write_html(out_html, body, head_extra=head_extra, title=title)
+
 
 def write_md_like_page(out_html: Path, md_body: str, head_extra: str = ""):
     body = md_body.replace("&","&amp;").replace("<","&lt;")
@@ -458,6 +514,12 @@ def build_article_pages():
             body.append("<h2>Files</h2>")
             body.append(files_ul)
 
+            if html_body:
+                body.append("<h2>Article</h2>")
+                body.append(html_body)
+
+
+
             if it["references_doi"]:
                 body.append("<h2>References (DOI)</h2>")
                 refs_items = []
@@ -469,9 +531,6 @@ def build_article_pages():
                 if refs_items:
                     body.append("<ul>" + "".join(refs_items) + "</ul>")
 
-            if html_body:
-                body.append("<h2>Article</h2>")
-                body.append(html_body)
             body.append("</main>")
 
             version_url = f"{BASE_URL}/prints/{stem}/{it['doi_prefix']}/{it['doi_suffix']}/"
@@ -608,6 +667,10 @@ def build_article_pages():
             body.append("<h2>Abstract</h2>")
             body.append(f"<p>{it['abstract']}</p>")
 
+        if html_body:
+            body.append("<h2>Article (latest)</h2>")
+            body.append(html_body)
+
         if it["references_doi"]:
             body.append("<h2>References (DOI)</h2>")
             refs_items = []
@@ -618,10 +681,6 @@ def build_article_pages():
                 refs_items.append(f'<li><a href="{ref_url}">{ref_url}</a></li>')
             if refs_items:
                 body.append("<ul>" + "".join(refs_items) + "</ul>")
-
-        if html_body:
-            body.append("<h2>Article (latest)</h2>")
-            body.append(html_body)
         body.append("</main>")
 
         stem_url = f"{BASE_URL}/prints/{stem}/"
@@ -892,6 +951,30 @@ def main():
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
 
+    # Replicate simple site assets from .scripts/src/site/ → site/
+    # - .md files: header + raw markdown + footer (+ coda via write_html), saved as *.md.html
+    # - everything else: copied verbatim, preserving tree
+    site_src = SRC / "site"
+    if site_src.exists():
+        for src_path in site_src.rglob("*"):
+            if not src_path.is_file():
+                continue
+            rel_path = src_path.relative_to(site_src)
+
+            if src_path.suffix.lower() == ".md":
+                # about.md → about.md.html (same relative folder)
+                dst_rel = rel_path.with_suffix(rel_path.suffix + ".html")
+                dst_path = OUT / dst_rel
+                md_body = src_path.read_text(encoding="utf-8")
+                # write_html will wrap with header/footer and append coda+stamp
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                write_html(dst_path, md_body, head_extra="", title=rel_path.stem)
+            else:
+                # any non-.md asset is mirrored 1:1
+                dst_path = OUT / rel_path
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_path, dst_path)
+
     # Build article/stem/version pages for ALL prints (needed to host files)
     build_article_pages()
 
@@ -934,18 +1017,33 @@ def main():
             keep.append(dd)
         dirnames[:] = keep
 
-        # Mirror selected files (unchanged logic)
+        # Mirror selected files
         for fname in filenames:
-            if fname.startswith("."): continue
-            p = d/fname
-            if p.suffix.lower() in MIRROR_EXTS and "prints" in p.parts:
+            if fname.startswith("."):
+                continue
+            p = d / fname
+            ext = p.suffix.lower()
+
+            # 1) Root-level simple pages: about.md, submissions.md, policies.md, journals.md
+            if (
+                d == ROOT
+                and fname in {"about.md", "submissions.md", "policies.md", "journals.md"}
+                and ext in MIRROR_EXTS
+            ):
+                dst = OUT / rel(p)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(p, dst)
+                continue
+
+            # 2) Prints subtree: mirror as before, but skip hidden stems
+            if ext in MIRROR_EXTS and "prints" in p.parts:
                 try:
                     i = p.parts.index("prints")
-                    if len(p.parts) >= i+2 and p.parts[i+1] in hidden_stems:
+                    if len(p.parts) >= i + 2 and p.parts[i + 1] in hidden_stems:
                         continue
                 except ValueError:
                     pass
-                dst = OUT/rel(p)
+                dst = OUT / rel(p)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, dst)
 
