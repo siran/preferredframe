@@ -13,7 +13,7 @@ from feedgen.feed import FeedGenerator
 EXCLUDE_NAMES = {
     "site","venv",".venv","env",".env","node_modules",".git",
     "__pycache__", ".mypy_cache",".pytest_cache",".ruff_cache",".cache",
-    "Makefile","index.html","_staging"
+    "Makefile","index.html","_staging", "pnpmd.map", "requirements.txt"
 }
 MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
 PREFERRED_JOURNAL = "Preferred Frame"
