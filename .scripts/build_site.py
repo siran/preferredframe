@@ -290,44 +290,56 @@ def build_article_pages():
     for prov in prints.glob("*/*/*/provenance.yaml"):
         data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
 
-
-        # # skip if not Preferred Frame journal
-        # journal = (data.get("journal") or "").strip()
-        # if journal and journal != "Preferred Frame":
-        #     continue
-
         # derive identifiers from path
         stem = prov.parent.parent.parent.name
         doi_prefix = prov.parent.parent.name
         doi_suffix = prov.parent.name
 
         # ---- NEW schema (preferred), with OLD fallbacks ----
+        pf_block = data.get("parsed_from_pnpmd") or {}  # older provenance
+
         # titles/abstract/keywords/authors/dates
-        pf_block = data.get("parsed_from_pnpmd") or {}  # old
         title    = (data.get("title") or pf_block.get("title") or "") or ""
         abstract = (data.get("abstract") or pf_block.get("abstract") or "") or ""
         kws      = (data.get("keywords") or pf_block.get("keywords") or []) or []
+        onesent  = (
+            data.get("one_sentence_summary")
+            or pf_block.get("one_sentence_summary")
+            or pf_block.get("one_sentence")
+            or ""
+        )
+        onesent = (onesent or "").strip()
+
         # authors: new at top-level; old under parsed_from_pnpmd
         authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
 
         # dates
-        date_norm = (data.get("publication_date") or data.get("creation_date") or
-                     pf_block.get("date") or "")
+        date_norm = (
+            data.get("publication_date")
+            or data.get("creation_date")
+            or pf_block.get("date")
+            or ""
+        )
 
-        # DOI/concept DOI
-        zenodo = data.get("zenodo") or {}  # old
+        # DOI / concept DOI
+        zenodo = data.get("zenodo") or {}  # very old
         doi     = (data.get("doi") or zenodo.get("doi") or "") or ""
         concept = (data.get("concept_doi") or zenodo.get("concept_doi") or "") or ""
 
         # site/permalink/html_canonical
-        permalink = (data.get("permalink") or "") or ""
+        permalink = (data.get("permalink") or "").strip()
         site_block = data.get("site") or {}  # old
-        html_canonical = (site_block.get("html_canonical") or site_block.get("permalink") or permalink or "").strip()
+        html_canonical = (
+            site_block.get("html_canonical")
+            or site_block.get("permalink")
+            or permalink
+            or ""
+        ).strip()
 
         # assets/artifacts (both shapes)
-        assets = (data.get("assets") or {})                 # old: may contain dict/str entries
+        assets = (data.get("assets") or {})                 # old
         canonical_assets = (data.get("canonical_assets") or {})  # very old
-        artifacts = (data.get("artifacts") or {})
+        artifacts = (data.get("artifacts") or {})           # new
 
         # filenames in repo folder (prefer explicit names)
         md_name   = (artifacts.get("md") or artifacts.get("main") or None)
@@ -346,23 +358,34 @@ def build_article_pages():
             pmd_name = Path(artifacts["pandoc_md_url"]).name
 
         # PDF: prefer explicit pdf_url (new). Fallbacks to assets/canonical_assets.
-        assets_pdf = (artifacts.get("pdf_url") or
-                      _asset_url(assets.get("pdf")) or
-                      _asset_url(canonical_assets.get("pdf")) or "")
+        assets_pdf = (
+            artifacts.get("pdf_url")
+            or _asset_url(assets.get("pdf"))
+            or _asset_url(canonical_assets.get("pdf"))
+            or ""
+        )
+
+        # references: new top-level references_doi (list of URLs); old may not have
+        references_doi = data.get("references_doi") or pf_block.get("references_doi") or []
+        if not isinstance(references_doi, list):
+            references_doi = [references_doi]
 
         records.append({
             "prov": prov, "stem": stem,
             "doi_prefix": doi_prefix, "doi_suffix": doi_suffix,
             "title": title, "authors": authors,
-            "abstract": abstract, "kws": kws,
+            "abstract": abstract, "onesent": onesent,
+            "kws": kws,
             "date": date_norm, "doi": doi, "concept": concept,
             "assets_pdf": assets_pdf,
             "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name,
             "html_canonical": html_canonical,
+            "references_doi": references_doi,
         })
 
         json.dumps(records, indent=2, default=str)
 
+    # group by stem
     groups = {}
     for r in records:
         groups.setdefault(r["stem"], []).append(r)
@@ -422,11 +445,29 @@ def build_article_pages():
             if authors_html: body.append(f"<p class='authors'>{authors_html}</p>")
             body.append(f"<p class='publine'>Preferred Frame — {month_year(it['date'])}</p>")
             body.append("<p class='links'>" + " · ".join(top_links) + "</p>")
+
+            if it["onesent"]:
+                body.append("<h2>One-Sentence Summary</h2>")
+                body.append(f"<p>{it['onesent']}</p>")
+
             if it["abstract"]:
                 body.append("<h2>Abstract</h2>")
                 body.append(f"<p>{it['abstract']}</p>")
+
             body.append("<h2>Files</h2>")
             body.append(files_ul)
+
+            if it["references_doi"]:
+                body.append("<h2>References (DOI)</h2>")
+                refs_items = []
+                for ref_url in it["references_doi"]:
+                    ref_url = (ref_url or "").strip()
+                    if not ref_url:
+                        continue
+                    refs_items.append(f'<li><a href="{ref_url}">{ref_url}</a></li>')
+                if refs_items:
+                    body.append("<ul>" + "".join(refs_items) + "</ul>")
+
             if html_body:
                 body.append("<h2>Article</h2>")
                 body.append(html_body)
@@ -450,7 +491,7 @@ def build_article_pages():
                 head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
             if it["doi"]:
                 head.append(f'<meta name="citation_doi" content="{it["doi"]}">')
-            desc = it["abstract"] or it["title"]
+            desc = it["abstract"] or it["onesent"] or it["title"]
             if desc:
                 head.append(f'<meta name="description" content="{desc}">')
                 head.append(f'<meta property="og:description" content="{desc}">')
@@ -480,7 +521,6 @@ def build_article_pages():
             }
             if enc: article_ld["encoding"] = enc
             if it["doi"]:
-                # keep only the DOI suffix after last '/'
                 article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
             head.append(
                 '<script type="application/ld+json">'
@@ -558,9 +598,26 @@ def build_article_pages():
             body.append(versions_ul)
         body.append("<h2>Files (latest)</h2>")
         body.append(files_ul)
+
+        if it["onesent"]:
+            body.append("<h2>One-Sentence Summary</h2>")
+            body.append(f"<p>{it['onesent']}</p>")
+
         if it["abstract"]:
             body.append("<h2>Abstract</h2>")
             body.append(f"<p>{it['abstract']}</p>")
+
+        if it["references_doi"]:
+            body.append("<h2>References (DOI)</h2>")
+            refs_items = []
+            for ref_url in it["references_doi"]:
+                ref_url = (ref_url or "").strip()
+                if not ref_url:
+                    continue
+                refs_items.append(f'<li><a href="{ref_url}">{ref_url}</a></li>')
+            if refs_items:
+                body.append("<ul>" + "".join(refs_items) + "</ul>")
+
         if html_body:
             body.append("<h2>Article (latest)</h2>")
             body.append(html_body)
@@ -584,7 +641,7 @@ def build_article_pages():
             head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
         if it["doi"]:
             head.append(f'<meta name="citation_doi" content="{it["doi"]}">')
-        desc = it["abstract"] or it["title"]
+        desc = it["abstract"] or it["onesent"] or it["title"]
         if desc:
             head.append(f'<meta name="description" content="{desc}">')
             head.append(f'<meta property="og:description" content="{desc}">')
@@ -768,6 +825,12 @@ def build_rss_feed():
         title    = (data.get("title") or pf_block.get("title") or stem)
         authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
         abstract = (data.get("abstract") or pf_block.get("abstract") or "")
+        onesent  = (
+            data.get("one_sentence_summary")
+            or pf_block.get("one_sentence_summary")
+            or pf_block.get("one_sentence")
+            or ""
+        )
         date_norm= (data.get("publication_date") or data.get("creation_date") or pf_block.get("date") or None)
         doi      = (data.get("doi") or (data.get("zenodo") or {}).get("doi") or "")
 
@@ -786,6 +849,7 @@ def build_rss_feed():
                 "title": title,
                 "authors": authors,
                 "abstract": abstract,
+                "onesent": onesent,
                 "date": dt,
                 "url": item_url,
                 "doi": doi,
@@ -805,8 +869,9 @@ def build_rss_feed():
         fe.id(it["url"])
         fe.link(href=it["url"])
         fe.title(it["title"])
-        if it["abstract"]:
-            fe.description(it["abstract"])
+        desc = it["abstract"] or it["onesent"]
+        if desc:
+            fe.description(desc)
         for a in it["authors"]:
             nm = a.get("name","").strip()
             if nm:
@@ -841,14 +906,10 @@ def main():
 
         # If we're under prints/<stem>/... and stem is hidden, skip listing for this subtree
         if "prints" in d.parts:
-            # try:
-                i = d.parts.index("prints")
-                if len(d.parts) >= i+2 and d.parts[i+1] in hidden_stems:
-                    dirnames.clear()
-                    # Don't generate index.html for hidden subtree
-                    continue
-            # except ValueError:
-                # pass
+            i = d.parts.index("prints")
+            if len(d.parts) >= i+2 and d.parts[i+1] in hidden_stems:
+                dirnames.clear()
+                continue
 
         # Normal pruning
         if dirpath != str(ROOT):
@@ -875,7 +936,6 @@ def main():
             if fname.startswith("."): continue
             p = d/fname
             if p.suffix.lower() in MIRROR_EXTS and "prints" in p.parts:
-                # If file is under a hidden stem, skip mirroring into the generic listing area
                 try:
                     i = p.parts.index("prints")
                     if len(p.parts) >= i+2 and p.parts[i+1] in hidden_stems:
@@ -891,7 +951,6 @@ def main():
         if out_html.exists():
             continue
 
-        # Build item list excluding hidden stems at prints/
         items = []
         # Dirs
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
