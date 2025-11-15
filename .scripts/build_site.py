@@ -13,7 +13,8 @@ from feedgen.feed import FeedGenerator
 EXCLUDE_NAMES = {
     "site","venv",".venv","env",".env","node_modules",".git",
     "__pycache__", ".mypy_cache",".pytest_cache",".ruff_cache",".cache",
-    "Makefile","index.html","_staging", "pnpmd.map", "requirements.txt"
+    "Makefile","index.html","_staging", "pnpmd.map", "requirements.txt",
+    "gpt5push.sh"
 }
 MIRROR_EXTS = {".html",".md",".pandoc.md",".yaml",".yml"}
 PREFERRED_JOURNAL = "Preferred Frame"
@@ -191,7 +192,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
     out_html.write_text(doc, encoding="utf-8")
 
 def write_md_like_page(out_html: Path, md_body: str, head_extra: str = ""):
-    body = "<main>\n<pre>\n" + md_body.replace("&","&amp;").replace("<","&lt;") + "\n</pre>\n</main>\n"
+    body = md_body.replace("&","&amp;").replace("<","&lt;")
     write_html(out_html, body, head_extra=head_extra)
 
 def crumb_link(parts: list[str]) -> str:
