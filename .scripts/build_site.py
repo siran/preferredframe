@@ -951,29 +951,43 @@ def main():
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
 
+    # --- debug: paths and environment ---
+    print(f"[DEBUG] ROOT: {ROOT}")
+    print(f"[DEBUG] OUT:  {OUT}")
+    print(f"[DEBUG] SRC:  {SRC}")
+    print(f"[DEBUG] BASE_URL: {BASE_URL}")
+
     # Replicate simple site assets from .scripts/src/site/ → site/
     # - .md files: header + raw markdown + footer (+ coda via write_html), saved as *.md.html
     # - everything else: copied verbatim, preserving tree
     site_src = SRC / "site"
+    print(f"[DEBUG] site_src: {site_src} (exists={site_src.exists()})")
+
     if site_src.exists():
         for src_path in site_src.rglob("*"):
             if not src_path.is_file():
                 continue
+
             rel_path = src_path.relative_to(site_src)
+            print(f"[DEBUG] site asset found: {rel_path}")
 
             if src_path.suffix.lower() == ".md":
                 # about.md → about.md.html (same relative folder)
                 dst_rel = rel_path.with_suffix(rel_path.suffix + ".html")
                 dst_path = OUT / dst_rel
+                print(f"[DEBUG]   MD -> {dst_rel}")
                 md_body = src_path.read_text(encoding="utf-8")
-                # write_html will wrap with header/footer and append coda+stamp
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 write_html(dst_path, md_body, head_extra="", title=rel_path.stem)
             else:
-                # any non-.md asset is mirrored 1:1
                 dst_path = OUT / rel_path
+                print(f"[DEBUG]   COPY -> {rel_path} → {dst_path.relative_to(OUT)}")
                 dst_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_path, dst_path)
+    else:
+        print("[DEBUG] WARNING: site_src does not exist; no site/ assets copied")
+
+
 
     # Build article/stem/version pages for ALL prints (needed to host files)
     build_article_pages()
