@@ -180,7 +180,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
     now = datetime.now(ny)
     offset = now.utcoffset()
     hrs = int(offset.total_seconds()//3600) if offset else 0
-    stamp = f"(generated at: {now.strftime('%Y-%m-%d %H:%M %Z')} {hrs:+d})"
+    stamp = f"(built: {now.strftime('%Y-%m-%d %H:%M %Z')} UTC{hrs:+d})"
 
     if not doc.endswith("\n"):
         doc += "\n"
