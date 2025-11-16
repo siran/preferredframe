@@ -185,7 +185,7 @@ def normalize_markdown_prose(md: str) -> str:
         else:
             buf.append(line)
     flush_buf()
-    return "\n\n".join(out).strip()
+    return "\n".join(out).strip()
 
 def replace_header_date(md_text: str, new_date_iso: str) -> str:
     lines = md_text.replace("\r\n", "\n").splitlines()
@@ -334,24 +334,24 @@ def parse_pnpmd(md_text: str) -> Dict:
     about_parsed = _extract_about_authors(about_items)
     about_index = {_key(a["name"]): a for a in about_parsed}
 
-    merged = []
-    seen = set()
-    for nm in header_authors:
-        k = _key(nm)
-        if k in about_index:
-            e = dict(about_index[k])
-            e["name"] = nm
-            merged.append(e)
-            seen.add(k)
-        else:
-            merged.append({"name": nm})
-            seen.add(k)
-    for k, e in about_index.items():
-        if k not in seen:
-            merged.append(e)
+    # --- AUTHOR MERGE LOGIC ---
+    # Canonical authors = header line. "About Author(s)" only enriches them.
+    # If no header authors exist, fall back to About Author(s).
+    merged: List[Dict[str, str]] = []
 
-    if not merged and header_authors:
-        merged = [{"name": nm} for nm in header_authors]
+    if header_authors:
+        # Use only names from the header; attach metadata if About Author(s) has a matching name.
+        for nm in header_authors:
+            k = _key(nm)
+            if k in about_index:
+                e = dict(about_index[k])
+                e["name"] = nm
+                merged.append(e)
+            else:
+                merged.append({"name": nm})
+    else:
+        # Backward-compatible fallback: no header authors, so use About Author(s) as canonical.
+        merged = list(about_parsed)
 
     refs_text = _stringify_blocks(refs_blocks)
     ref_dois = sorted({m.group(0).rstrip('.,);:]') for m in DOI_RE.finditer(refs_text)})

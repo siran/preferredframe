@@ -331,8 +331,9 @@ def _prepare_preprocessed(src: Path, omit_toc: bool, omit_numbering: bool) -> tu
     if meta.get("date"): meta_args += ["-M", f"date={meta['date']}"]
     meta_args += ["-M","autoSectionLabels=true",
                   "-M","autoSectionLabelsDepth=6",
-                  "-M","autoSectionLabelsPrefix=sec:",
+                #   "-M","autoSectionLabelsPrefix=sec:",
                   "-M","toc-title=Table of Contents"]
+    meta_args += ["-M","linkReferences=true"]
 
     def min_heading_level(md: str) -> Optional[int]:
         lvl=None
