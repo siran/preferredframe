@@ -3,9 +3,9 @@
 serve:
 	echo "removing site/"
 	rm -r site || true
-	git restore .scripts/build_site.py
 	echo "building ..."
-	touch site/.keep
+	.scripts/build_site.py
+	git restore  site/.keep
 	echo "serving ..."
 	python3 -m http.server -d site 8000
 
