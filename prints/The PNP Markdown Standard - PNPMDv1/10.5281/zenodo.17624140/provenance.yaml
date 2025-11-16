@@ -1,0 +1,78 @@
+journal: Preferred Frame
+publication_type: article
+title: PNPMD Markdown specification — PNPMD v1.0.5
+doi: 10.5281/zenodo.17624140
+concept_doi: 10.5281/zenodo.17624139
+permalink: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/"
+publication_date: '2025-11-16'
+publication_year: '2025'
+keywords:
+- plain-text
+- research format
+- markdown
+- mathjax
+- pandoc
+- PNPMD
+one_sentence_summary: PNPMD is a specification for human-readable-first, plain-text, math-aware, markdown documents.
+abstract: PNPMD is a specification for human-readable-first, plain-text, math-aware documents. PNPMD honors Pandoc’s flavored markdown, rendered with pdflatex. Uses Pandoc’s crossref filter (giving numbered and referenceable equations, figures, tables, etc), and adds some syntax sugar to ease cross-referencing and citations.
+authors:
+- name: Max Freet
+  email: max@preferredframe.com
+- name: An M. Rodriguez
+  orcid: 0009-0009-9098-9468
+  email: an@preferredframe.com
+- name: Adrien Hale
+references_doi: []
+zenodo_metadata:
+  upload_type: publication
+  publication_type: article
+  title: PNPMD Markdown specification — PNPMD v1.0.5
+  creators:
+  - name: Max Freet
+    email: max@preferredframe.com
+  - name: An M. Rodriguez
+    orcid: 0009-0009-9098-9468
+    email: an@preferredframe.com
+  - name: Adrien Hale
+  description: PNPMD is a specification for human-readable-first, plain-text, math-aware documents. PNPMD honors Pandoc’s flavored markdown, rendered with pdflatex. Uses Pandoc’s crossref filter (giving numbered and referenceable equations, figures, tables, etc), and adds some syntax sugar to ease cross-referencing and citations.
+  notes: PNPMD is a specification for human-readable-first, plain-text, math-aware, markdown documents.
+  keywords:
+  - plain-text
+  - research format
+  - markdown
+  - mathjax
+  - pandoc
+  - PNPMD
+  journal_title: Preferred Frame Writing
+  publisher:
+    name: Preferred Frame Writing
+  publication_year: '2025'
+  date: '2025-11-16'
+  license: cc-by-4.0
+  related_identifiers:
+  - relation: isIdenticalTo
+    identifier: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.html"
+    resource_type: publication-article
+  - relation: isIdenticalTo
+    identifier: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.md"
+    resource_type: publication-article
+  - relation: isIdenticalTo
+    identifier: "https://assets.preferredframe.com/preferredframe/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.pdf"
+    resource_type: publication-article
+  communities:
+  - identifier: preferredframe
+  prereserve_doi: true
+source:
+  repo_origin: git@github.com:siran/research.git
+  commit: d5af6275dd03dcd6fb62fd0282648ed4d37f4911
+  filename: The PNP Markdown Standard - PNPMDv1.md
+artifacts:
+  md: The PNP Markdown Standard - PNPMDv1.md
+  md_url: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.md"
+  pandoc_md_name: The PNP Markdown Standard - PNPMDv1.pandoc.md
+  pandoc_md_url: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.pandoc.md"
+  pdf_name: The PNP Markdown Standard - PNPMDv1.pdf
+  pdf_url: "https://assets.preferredframe.com/preferredframe/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.pdf"
+  html_name: The PNP Markdown Standard - PNPMDv1.html
+  html_url: "https://preferredframe.com/prints/The PNP Markdown Standard - PNPMDv1/10.5281/zenodo.17624140/The PNP Markdown Standard - PNPMDv1.html"
+  primary: md

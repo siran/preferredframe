@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Max Freet" />
+  <meta name="author" content="An M. Rodriguez" />
+  <meta name="author" content="Adrien Hale" />
+  <meta name="dcterms.date" content="2025-11-16" />
+  <title>PNPMD Markdown specification — PNPMD v1.0.5</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">PNPMD Markdown specification — PNPMD v1.0.5</h1>
+<p class="author">Max Freet</p>
+<p class="author">An M. Rodriguez</p>
+<p class="author">Adrien Hale</p>
+<p class="date">November 16, 2025</p>
+</header>
+<h1 data-number="1" id="sec:one-sentence-summary"><span
+class="header-section-number">1</span> One-Sentence Summary</h1>
+<p>PNPMD is a specification for human-readable-<em>first</em>,
+plain-text, math-aware, markdown documents.</p>
+<h1 data-number="2" id="sec:abstract"><span
+class="header-section-number">2</span> Abstract</h1>
+<p>PNPMD is a specification for human-readable-<em>first</em>,
+plain-text, math-aware documents. PNPMD honors Pandoc’s flavored
+markdown, rendered with pdflatex. Uses Pandoc’s crossref filter (giving
+numbered and referenceable equations, figures, tables, etc), and adds
+some syntax sugar to ease cross-referencing and citations.</p>
+<h1 data-number="3" id="sec:keywords"><span
+class="header-section-number">3</span> Keywords</h1>
+<p>plain-text, research format, markdown, mathjax, pandoc, PNPMD</p>
+<h1 data-number="4" id="sec:introduction"><span
+class="header-section-number">4</span> Introduction</h1>
+<p>PNPMD is a specification for human-readable-<em>first</em>,
+plain-text, math-aware, markdown documents.</p>
+<p>PNPMD:</p>
+<ul>
+<li>provides a complete Markdown structure for mathematically aware
+documents, with cross-references and citations,</li>
+<li>keeps the format plain-text and human-readable-<em>first</em>,
+and</li>
+<li>avoids noisy LaTeX wrappers and PDF-only workflows</li>
+</ul>
+<h1 data-number="5" id="sec:suggested-structure"><span
+class="header-section-number">5</span> (Suggested) Structure</h1>
+<ul>
+<li>Header</li>
+<li>One-Sentence Summary</li>
+<li>Abstract</li>
+<li>Keywords</li>
+<li>Other body sections</li>
+<li>About Author(s)</li>
+<li>References</li>
+</ul>
+<h2 data-number="5.1" id="sec:header"><span
+class="header-section-number">5.1</span> Header</h2>
+<p>Three lines:</p>
+<pre><code>% Title
+% Author(s)
+% Date</code></pre>
+<h2 data-number="5.2" id="sec:one-sentence-summary-1"><span
+class="header-section-number">5.2</span> One-Sentence Summary</h2>
+<p>One sentence summarizing the paper.</p>
+<h2 data-number="5.3" id="sec:abstract-1"><span
+class="header-section-number">5.3</span> Abstract</h2>
+<p>3–5 sentences: problem <span class="math inline">→</span> method
+<span class="math inline">→</span> result <span
+class="math inline">→</span> significance.</p>
+<p>No citations or equations.</p>
+<h2 data-number="5.4" id="sec:keywords-1"><span
+class="header-section-number">5.4</span> Keywords</h2>
+<p>3–6 topical keywords.</p>
+<h2 data-number="5.5" id="sec:other-body-sections-recommended"><span
+class="header-section-number">5.5</span> Other Body Sections
+(Recommended)</h2>
+<p>Introduction, Theory/Framework, Derivation, Results, Discussion,
+Conclusion, Future Work, Appendices.</p>
+<h2 data-number="5.6" id="sec:about-authors"><span
+class="header-section-number">5.6</span> About Author(s)</h2>
+<p>Immediately before References.</p>
+<p>A list of authors, with ORCID if available, email if corresponding,
+or relevant information.</p>
+<p>For example,</p>
+<ul>
+<li>An M. Rodriguez, https://orcid.org/0009-0009-9098-9468,
+an@preferredframe.com</li>
+<li>Max Freet, max@preferredframe.com</li>
+</ul>
+<h2 data-number="5.7" id="sec:references"><span
+class="header-section-number">5.7</span> References</h2>
+<p>Use DOI links where possible.</p>
+<h1 data-number="6" id="sec:references-and-cross-references"><span
+class="header-section-number">6</span> References and
+Cross-References</h1>
+<p>Cross-linking, numbering, and citations are produced automatically by
+Pandoc with the <code>pandoc-crossref</code> filter.</p>
+<h1 data-number="7"
+id="sec:cross-reference-system-and-sugar-substitutions"><span
+class="header-section-number">7</span> Cross-Reference System and Sugar
+Substitutions</h1>
+<p>When using the <strong>PNPMD rendering script</strong>, several
+syntactic sugars are automatically expanded to Pandoc-compatible
+links:</p>
+<ul>
+<li><p><code>{#id}</code> <span class="math inline">→</span>
+<code>[]{#id}</code>: For plain prose anchors (no colon).</p></li>
+<li><p><code>@id</code> <span class="math inline">→</span>
+<code>[label](#id)</code>: If a <code>[label]{#id}</code> exists</p>
+<ul>
+<li><code>@id</code> <span class="math inline">→</span>
+<code>[@id](#id)</code>: otherwise</li>
+</ul></li>
+<li><p><code>[label](@id)</code> <span class="math inline">→</span>
+<code>[label](#id)</code>: Always.</p></li>
+<li><p><code>[label](@sec:id)</code> <span class="math inline">→</span>
+<code>[label](#sec:id)</code>: Always.</p></li>
+<li><p><code>@sec:</code>, <code>@fig:</code>, <code>@eq:</code>,
+<code>@tbl:</code> <span class="math inline">→</span>
+<em>(unchanged)</em>: Handled by <code>pandoc-crossref</code>.</p></li>
+<li><p>bare <code>#id</code> <span class="math inline">→</span>
+<code>[](#id)</code>: When not inside code blocks, headings, or existing
+links.</p></li>
+</ul>
+<p>Colon-prefixed anchors (e.g., <code>{#eq:wave}</code>) are reserved
+for cross-reference numbering and remain untouched.</p>
+<h1 data-number="8" id="sec:formatting-rules"><span
+class="header-section-number">8</span> Formatting Rules</h1>
+<h2 data-number="8.1" id="sec:math"><span
+class="header-section-number">8.1</span> Math</h2>
+<ul>
+<li>Inline math: <code>$...$</code> (e.g., <code>$E = mc^2$</code>)</li>
+<li>Display math:</li>
+</ul>
+<pre><code>$$
+F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu
+$$ {#eq:sampleeq}</code></pre>
+<p>renders as:</p>
+<p><span id="eq:sampleeq"><span
+class="math display"><em>F</em><sub><em>μ</em><em>ν</em></sub> = ∂<sub><em>μ</em></sub><em>A</em><sub><em>ν</em></sub> − ∂<sub><em>ν</em></sub><em>A</em><sub><em>μ</em></sub>   (1)</span></span></p>
+<p>And can be referenced as <code>@eq:sampleeq</code>, like so:</p>
+<p>See eq. <a href="#eq:sampleeq">1</a></p>
+<ul>
+<li>MUST NOT use <code>\[...\]</code> or <code>\(...\)</code> for latex.
+ONLY USE <span class="math inline">..</span> and <span
+class="math display">..</span> for latex quoting.</li>
+<li>Specify units whenever possible.</li>
+</ul>
+<h2 data-number="8.2" id="sec:characters"><span
+class="header-section-number">8.2</span> Characters</h2>
+<ul>
+<li>UTF-8 required (pdflatex-compatible)</li>
+<li>Unicode symbols allowed only if supported by pdfLaTeX input;
+otherwise prefer <code>$...$</code> or ASCII</li>
+</ul>
+<h2 data-number="8.3" id="sec:text-emphasis"><span
+class="header-section-number">8.3</span> Text Emphasis</h2>
+<p>Avoid bold/italics/underline unless essential.</p>
+<p>Clarity is primary. Don’t pollute the document with unnecessary
+visual noise.</p>
+<h2 data-number="8.4" id="sec:section-separation"><span
+class="header-section-number">8.4</span> Section Separation</h2>
+<ul>
+<li>Separate sections with two blank lines</li>
+<li>Never use <code>---</code> (horizontal rules) to separate
+sections</li>
+<li>Do <strong>not</strong> number sections manually; Pandoc handles
+numbering automatically</li>
+</ul>
+<h1 data-number="9" id="sec:conclusion"><span
+class="header-section-number">9</span> Conclusion</h1>
+<p>PNPMD is a plain-text specification for mathematically aware
+documents.</p>
+<p>It standardizes minimal syntax, automatic cross-referencing, and
+deterministic conversion through Pandoc with
+<code>pandoc-crossref</code>.</p>
+<p>The format remains simple, portable, and human-readable.</p>
+<p>PNPMD: where notation and meaning remain human before machine.</p>
+<h1 data-number="10" id="sec:corresponding-author"><span
+class="header-section-number">10</span> Corresponding Author</h1>
+<p>An M. Rodriguez: an@preferredframe.com</p>
+</body>
+</html>
