@@ -1,0 +1,82 @@
+journal: Preferred Frame
+publication_type: article
+title: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time
+doi: 10.5281/zenodo.17633950
+concept_doi: null
+permalink: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/"
+publication_date: '2025-11-17'
+publication_year: '2025'
+keywords:
+- emergent spacetime
+- causal sets
+- relational physics
+- dimension
+- embeddings
+- metric structure
+one_sentence_summary: Dimension and space emerge from causal distances inside a single stable Node, via approximate metric embeddings.
+abstract: 'We extend a previously introduced framework in which time and distance arise from internal causal relations within a single stable Node. In this work we clarify that no metric, geometric structure, or fixed dimensionality is assumed at the fundamental level. The Node is an abstract collection of subnodes linked by causal influence, and any notion of "space" arises only from the distances induced by causal chains. We show that observers may assign an effective spatial dimension whenever these causal distances can be approximately embedded into a D-dimensional space with low distortion. Crucially, no particular dimension D is preferred or fundamental: the same causal structure may support multiple effective dimensional interpretations, and the true underlying dimensionality is undefined. This liberates spatial dimension from preconceived geometric constraints and treats it as an emergent, observer-dependent property of causal relations rather than a fixed feature of spacetime.'
+authors:
+- name: Anes Palma
+- name: An M. Rodriguez
+  orcid: 0009-0009-9098-9468
+  email: an@preferredframe.com
+references_doi:
+- https://doi.org/10.13140/RG.2.2.26399.68003
+- https://doi.org/10.5281/zenodo.17613401
+zenodo_metadata:
+  upload_type: publication
+  publication_type: article
+  title: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time
+  creators:
+  - name: Anes Palma
+  - name: An M. Rodriguez
+    orcid: 0009-0009-9098-9468
+    email: an@preferredframe.com
+  description: 'We extend a previously introduced framework in which time and distance arise from internal causal relations within a single stable Node. In this work we clarify that no metric, geometric structure, or fixed dimensionality is assumed at the fundamental level. The Node is an abstract collection of subnodes linked by causal influence, and any notion of "space" arises only from the distances induced by causal chains. We show that observers may assign an effective spatial dimension whenever these causal distances can be approximately embedded into a D-dimensional space with low distortion. Crucially, no particular dimension D is preferred or fundamental: the same causal structure may support multiple effective dimensional interpretations, and the true underlying dimensionality is undefined. This liberates spatial dimension from preconceived geometric constraints and treats it as an emergent, observer-dependent property of causal relations rather than a fixed feature of spacetime.'
+  notes: Dimension and space emerge from causal distances inside a single stable Node, via approximate metric embeddings.
+  keywords:
+  - emergent spacetime
+  - causal sets
+  - relational physics
+  - dimension
+  - embeddings
+  - metric structure
+  journal_title: Preferred Frame
+  publisher:
+    name: Preferred Frame
+  publication_year: '2025'
+  date: '2025-11-17'
+  license: cc-by-4.0
+  related_identifiers:
+  - relation: isIdenticalTo
+    identifier: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.html"
+    resource_type: publication-article
+  - relation: isIdenticalTo
+    identifier: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.md"
+    resource_type: publication-article
+  - relation: isIdenticalTo
+    identifier: "https://assets.preferredframe.com/preferredframe/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.pdf"
+    resource_type: publication-article
+  - relation: cites
+    identifier: https://doi.org/10.13140/RG.2.2.26399.68003
+    resource_type: publication-article
+  - relation: cites
+    identifier: https://doi.org/10.5281/zenodo.17613401
+    resource_type: publication-article
+  communities:
+  - identifier: preferredframe
+  prereserve_doi: true
+source:
+  repo_origin: git@github.com:siran/research.git
+  commit: 87ba33452523817ad7e1ff63fc539da804e6130e
+  filename: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.md
+artifacts:
+  md: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.md
+  md_url: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.md"
+  pandoc_md_name: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.pandoc.md
+  pandoc_md_url: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.pandoc.md"
+  pdf_name: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.pdf
+  pdf_url: "https://assets.preferredframe.com/preferredframe/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.pdf"
+  html_name: Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.html
+  html_url: "https://preferredframe.com/prints/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time/10.5281/zenodo.17633950/Dimension and Space as Emergent Properties of Distance in a Cause-Effect Model of the Emergence of Time.html"
+  primary: md
