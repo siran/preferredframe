@@ -328,10 +328,11 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
 def _current_origin() -> str:
     """
     Shared origin resolution:
-    provenance > CNAME > env BASE_URL > computed BASE_URL
+    CNAME > provenance > env BASE_URL > computed BASE_URL
     """
     return (
-        _canonical_origin_from_provenance()
+        False
+        or _canonical_origin_from_provenance()
         or _origin_from_cname()
         or os.getenv("BASE_URL")
         or BASE_URL
@@ -352,7 +353,6 @@ def render_markdown_file(src: Path, dst_html: Path, title: str):
     head = [
         '<meta charset="utf-8">',
         f'<link rel="canonical" href="{page_url}">',
-        # avoid SEO duplication for rendered views
         '<meta name="robots" content="noindex,follow">',
         f'<meta name="description" content="Rendered Markdown view for {title}">',
     ]
@@ -483,17 +483,7 @@ def fmt_author(a):
 def build_article_pages():
     """
     Build article pages for all provenance.yaml entries, regardless of journal.
-
-    For each directory with provenance.yaml (top/stem/prefix/suffix):
-      - Build a version page under site/prints/<stem>/<prefix>/<suffix>/index.html
-      - Also build the same article index at the mirrored location:
-            site/<top>/<stem>/<prefix>/<suffix>/index.html
-      - Always build a 'stem' page under site/prints/<stem>/ (latest version).
-        Visibility of stems in directory indexes is controlled elsewhere
-        via hidden_stems, not here.
     """
-    origin = _current_origin()
-
     records = []
     for prov in iter_provenance_files():
         try:
@@ -592,7 +582,6 @@ def build_article_pages():
             "journal": journal,
         })
 
-        # keep JSON-serializability exercised; no-op result
         json.dumps(records, indent=2, default=str)
 
     if not records:
@@ -602,11 +591,12 @@ def build_article_pages():
     for r in records:
         groups.setdefault(r["stem"], []).append(r)
 
+    origin = _current_origin()
+
     for stem, items in groups.items():
         def sort_key(it):
             dt = _to_datetime(it["date"])
             return dt or datetime.fromtimestamp(it["prov"].stat().st_mtime)
-
         versions = sorted(items, key=sort_key, reverse=True)
         latest = versions[0]
 
@@ -735,11 +725,7 @@ def build_article_pages():
                 authors_ld.append(ent)
             enc = []
             if it["assets_pdf"]:
-                enc.append({
-                    "@type": "MediaObject",
-                    "contentUrl": it["assets_pdf"],
-                    "encodingFormat": "application/pdf",
-                })
+                enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
             article_ld = {
                 "@context": "https://schema.org",
                 "@type": "Article",
@@ -770,11 +756,15 @@ def build_article_pages():
             write_html(alias_dir/"index.html", body_html, head_extra=head_extra)
 
             # ALSO: article page at the mirrored source location
-            mirror_dir = OUT / rel(src)  # e.g. documents/.../10.5281/zenodo.17555930
+            mirror_dir = OUT / rel(src)
             mirror_dir.mkdir(parents=True, exist_ok=True)
             write_html(mirror_dir/"index.html", body_html, head_extra=head_extra)
 
-        # --- STEM page (latest), ALWAYS generated ---
+        # --- STEM page (latest) only if this stem has preferred-journal versions ---
+        has_preferred = any((v.get("journal") or "").strip() == PREFERRED_JOURNAL for v in versions)
+        if not has_preferred:
+            continue
+
         it = latest
         src = it["prov"].parent
         stem_out = OUT/"prints"/stem
@@ -891,7 +881,7 @@ def build_article_pages():
         desc = it["abstract"] or it["onesent"] or it["title"]
         if desc:
             head.append(f'<meta name="description" content="{desc}">')
-            head.append(f'<meta property="og:description" content="{desc}">')
+        head.append(f'<meta property="og:description" content="{desc}">')
         head.append('<meta property="og:type" content="article">')
         head.append(f'<meta property="og:title" content="{it["title"]}">')
         head.append(f'<meta property="og:url" content="{stem_url}">')
@@ -908,11 +898,7 @@ def build_article_pages():
             authors_ld.append(ent)
         enc = []
         if it["assets_pdf"]:
-            enc.append({
-                "@type": "MediaObject",
-                "contentUrl": it["assets_pdf"],
-                "encodingFormat": "application/pdf",
-            })
+            enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
         article_ld = {
             "@context": "https://schema.org",
             "@type": "Article",
@@ -1021,8 +1007,23 @@ def _url_from_out_path(p: Path) -> str:
     # URL-encode, but keep path separators and common safe chars
     return quote(path, safe="/:@-._~")
 
+
 def build_sitemap_and_robots():
-    origin = _current_origin()
+    """
+    Build sitemap.xml and robots.txt for THIS site.
+
+    Origin resolution for sitemap:
+        CNAME > BASE_URL env > computed BASE_URL
+
+    Provenance is intentionally ignored here so that cross-host
+    provenance (e.g. preprints/preferredframe) does not hijack
+    the sitemap domain.
+    """
+    origin = (
+        _origin_from_cname()
+        or os.getenv("BASE_URL")
+        or BASE_URL
+    ).rstrip("/")
 
     urls = []
     for path in OUT.rglob("*"):
