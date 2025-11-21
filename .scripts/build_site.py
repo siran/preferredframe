@@ -17,17 +17,19 @@ EXCLUDE_NAMES = {
     "gpt5push.sh"
 }
 MIRROR_EXTS = {
-    ".md",          # raw Markdown
-    ".markdown",    # alt Markdown extension
-    ".html",        # pre-rendered HTML
-    ".htm",         # rare but safe
-    ".yaml",        # provenance + metadata
+    ".md",
+    ".markdown",
+    ".html",
+    ".htm",
+    ".yaml",
     ".yml",
-    ".pandoc.md",   # the PNP preprocessed markdown
-    ".txt",         # plain text files
+    ".pandoc.md",
+    ".txt",
 }
 
-PREFERRED_JOURNAL = "Preferred Frame"
+MD_EXTS = {".md", ".markdown", ".pandoc.md"}
+
+PREFERRED_JOURNAL = "Preferred Frame Writing"
 
 # ---------- repo autodetect ----------
 def _parse_remote(url: str):
@@ -36,7 +38,8 @@ def _parse_remote(url: str):
             path = url.split(":", 1)[1]
         else:
             path = urllib.parse.urlparse(url).path.lstrip("/")
-        if path.endswith(".git"): path = path[:-4]
+        if path.endswith(".git"):
+            path = path[:-4]
         owner, repo = path.split("/", 1)
         return owner, repo
     except Exception:
@@ -74,8 +77,10 @@ def detect_repo_branch():
         except Exception:
             branch = "main"
 
-    if not owner: owner = "siran"
-    if not repo:  repo  = Path.cwd().name
+    if not owner:
+        owner = "siran"
+    if not repo:
+        repo = Path.cwd().name
     return owner, repo, branch
 
 OWNER, REPO, BRANCH = detect_repo_branch()
@@ -85,28 +90,93 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT  = ROOT / "site"
 SRC  = ROOT / ".scripts" / "src"
 
+# ---------- .gitignore handling ----------
+def load_gitignored_paths() -> set[Path]:
+    """
+    Use git to list paths ignored by .gitignore and friends.
+    Only untracked ignored paths are returned (standard git behavior).
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "ls-files", "-i", "--exclude-standard", "--others", "--directory"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return set()
+    paths: set[Path] = set()
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        p = (ROOT / line.rstrip("/")).resolve()
+        paths.add(p)
+    return paths
+
+GITIGNORED_PATHS = load_gitignored_paths()
+
+def is_gitignored(path: Path) -> bool:
+    """
+    True if 'path' is itself git-ignored or lies under an ignored path.
+    """
+    p = path.resolve()
+    for ign in GITIGNORED_PATHS:
+        try:
+            p.relative_to(ign)
+            return True
+        except ValueError:
+            continue
+    return False
+
 # ---------- base url ----------
 def compute_base_url() -> str:
     v = os.getenv("BASE_URL")
-    if v: return v.rstrip("/")
-    if os.getenv("GITHUB_ACTIONS","").lower() == "true":
+    if v:
+        return v.rstrip("/")
+    if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
         return f"https://{OWNER}.github.io/{REPO}"
     return "http://127.0.0.1:8000"
 
 BASE_URL = compute_base_url()
 
-def write_cname_if_custom(base_url: str):
+def write_cname_if_custom(base_url: str) -> None:
+    """
+    Ensure the deployed site/ has a CNAME when using a custom domain.
+
+    Priority:
+    1. If ROOT/CNAME exists, copy it into OUT/CNAME (mirrors branch-based behavior).
+    2. Otherwise, infer host from BASE_URL and, if it's a custom host, write CNAME.
+    """
+    # 1) Mirror committed CNAME if present
+    root_cname = ROOT / "CNAME"
+    if root_cname.exists():
+        OUT.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root_cname, OUT / "CNAME")
+        return
+
+    # 2) Fallback: infer from BASE_URL
     host = urlparse(base_url).hostname
-    if not host: return
-    if host.endswith(".github.io"): return
-    if host in {"localhost","127.0.0.1"}: return
+    if not host:
+        return
+    if host.endswith(".github.io"):
+        # default GitHub Pages domain: no custom CNAME
+        return
+    if host in {"localhost", "127.0.0.1"}:
+        return
+
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT/"CNAME").write_text(host+"\n", encoding="utf-8")
+    (OUT / "CNAME").write_text(host + "\n", encoding="utf-8")
 
 # ---------- helpers ----------
-def rel(p: Path) -> Path: return p.relative_to(ROOT)
-def rel_out(p: Path) -> Path: return p.relative_to(OUT)
-def load_text(p: Path) -> str: return p.read_text(encoding="utf-8") if p.exists() else ""
+def rel(p: Path) -> Path:
+    return p.relative_to(ROOT)
+
+def rel_out(p: Path) -> Path:
+    return p.relative_to(OUT)
+
+def load_text(p: Path) -> str:
+    return p.read_text(encoding="utf-8") if p.exists() else ""
 
 @dataclass
 class Item:
@@ -117,9 +187,12 @@ class Item:
 
 def _asset_url(x) -> str:
     """Accept str or dict; return URL/path string or ''."""
-    if not x: return ""
-    if isinstance(x, str): return x.strip()
-    if isinstance(x, dict): return (x.get("url") or x.get("href") or x.get("path") or "").strip()
+    if not x:
+        return ""
+    if isinstance(x, str):
+        return x.strip()
+    if isinstance(x, dict):
+        return (x.get("url") or x.get("href") or x.get("path") or "").strip()
     return ""
 
 def _canonical_origin_from_provenance() -> str | None:
@@ -134,9 +207,7 @@ def _canonical_origin_from_provenance() -> str | None:
         for prov in prints_dir.glob("*/*/*/provenance.yaml"):
             try:
                 data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
-                # new schema
                 u = (data.get("permalink") or "").strip()
-                # old schema fallbacks
                 if not u:
                     site_block = (data.get("site") or {})
                     u = (site_block.get("permalink") or site_block.get("html_canonical") or "").strip()
@@ -150,21 +221,75 @@ def _canonical_origin_from_provenance() -> str | None:
         pass
     return None
 
-def hidden_stems_from_provenance() -> set[str]:
-    """Stems under prints/ whose journal != Preferred Frame."""
-    stems: set[str] = set()
-    prints = ROOT / "prints"
-    if not prints.exists():
-        return stems
-    for prov in prints.glob("*/*/*/provenance.yaml"):
+def iter_provenance_files():
+    """
+    Yield all provenance.yaml files in the repo (except OUT and excluded),
+    ignoring gitignored paths.
+    """
+    for top in ROOT.iterdir():
+        if not top.is_dir():
+            continue
+        if top == OUT:
+            continue
+        if top.name in EXCLUDE_NAMES:
+            continue
+        if top.name.startswith(".") and top.name != ".well-known":
+            continue
+        for prov in top.glob("**/provenance.yaml"):
+            if is_gitignored(prov):
+                continue
+            yield prov
+
+def hidden_stems_from_provenance() -> set[tuple[str, str]]:
+    """
+    Stems {(top, stem)} for which *all* provenance entries have a journal
+    different from PREFERRED_JOURNAL. These must not appear in index listings,
+    but their files and article pages are still mirrored/built.
+    """
+    stems_with_pref: set[tuple[str, str]] = set()
+    stems_with_nonpref: set[tuple[str, str]] = set()
+
+    for prov in iter_provenance_files():
         try:
             data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
-            j = (data.get("journal") or "").strip()
-            if j and j != PREFERRED_JOURNAL:
-                stems.add(prov.parent.parent.parent.name)  # prints/<stem>/<prefix>/<suffix>/
         except Exception:
             continue
-    return stems
+
+        j = (data.get("journal") or "").strip()
+        rel_parts = rel(prov).parts
+        if len(rel_parts) < 2:
+            continue
+        top, stem = rel_parts[0], rel_parts[1]
+        key = (top, stem)
+
+        if not j:
+            continue
+        if j == PREFERRED_JOURNAL:
+            stems_with_pref.add(key)
+        else:
+            stems_with_nonpref.add(key)
+
+    return {k for k in stems_with_nonpref if k not in stems_with_pref}
+
+def _origin_from_cname() -> str | None:
+    """
+    If there is a CNAME, use it as the canonical origin, e.g.
+    CNAME: writing.preferredframe.com
+    -> https://writing.preferredframe.com
+    """
+    for base in (ROOT, OUT):
+        cname = base / "CNAME"
+        if not cname.exists():
+            continue
+        try:
+            first_line = cname.read_text(encoding="utf-8").splitlines()[0].strip()
+        except Exception:
+            continue
+        if not first_line:
+            continue
+        # assume https for canonical origin
+        return f"https://{first_line}"
+    return None
 
 
 # ---------- templating ----------
@@ -177,7 +302,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
 
     if head_extra:
         charset = '<!DOCTYPE html><meta charset="UTF-8">'
-        title_tag = f"<title>{title} - Preferred Frame')</title>"
+        title_tag = f"<title>{title} - {PREFERRED_JOURNAL}</title>"
         if charset not in head_extra:
             head_extra = charset + "\n" + title_tag + "\n" + head_extra
         m = re.search(r"</head\s*>", doc, re.IGNORECASE)
@@ -189,7 +314,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
     ny = ZoneInfo("America/New_York")
     now = datetime.now(ny)
     offset = now.utcoffset()
-    hrs = int(offset.total_seconds()//3600) if offset else 0
+    hrs = int(offset.total_seconds() // 3600) if offset else 0
     stamp = f"(built: {now.strftime('%Y-%m-%d %H:%M %Z')} UTC{hrs:+d})"
 
     if not doc.endswith("\n"):
@@ -201,54 +326,50 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(doc, encoding="utf-8")
 
-def build_simple_page_from_md(src_name: str, slug: str, title: str):
+def _current_origin() -> str:
     """
-    Build a simple content page from a Markdown file at ROOT/src_name,
-    into site/<slug>/index.html, using the normal header/footer.
+    Shared origin resolution:
+    CNAME > provenance > env BASE_URL > computed BASE_URL
     """
-    src_md = ROOT / src_name
-    if not src_md.exists():
-        return
+    return (
+        _origin_from_cname()
+        or _canonical_origin_from_provenance()
+        or os.getenv("BASE_URL")
+        or BASE_URL
+    ).rstrip("/")
 
-    md = src_md.read_text(encoding="utf-8")
+def render_markdown_file(src: Path, dst_html: Path, title: str):
+    """
+    Render a Markdown-like file into dst_html by:
+    - keeping the raw markdown text as body (no pandoc, no HTML conversion),
+    - wrapping it with header/footer/coda via write_html.
+    """
+    md = src.read_text(encoding="utf-8")
+    body_html = md
 
-    # Try to render Markdown → HTML via pandoc; fall back to plain text if missing.
-    try:
-        p = subprocess.run(
-            ["pandoc", "-f", "markdown", "-t", "html"],
-            input=md.encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        full_html = p.stdout.decode("utf-8")
-        html_body = extract_html_body(full_html) or full_html
-    except Exception:
-        # fallback: raw markdown, escaped
-        html_body = md.replace("&", "&amp;").replace("<", "&lt;")
-
-    body = "<main class='page'>\n" + html_body + "\n</main>"
-
-    page_url = f"{BASE_URL}/{slug}/"
+    rel_html = dst_html.relative_to(OUT).as_posix()
+    origin = _current_origin()
+    page_url = f"{origin}/{rel_html}"
     head = [
-        '<meta charset="UTF-8">',
+        '<meta charset="utf-8">',
         f'<link rel="canonical" href="{page_url}">',
-        '<meta name="robots" content="index,follow">',
-        f'<meta name="description" content="Preferred Frame — {title}">',
-        '<meta property="og:type" content="website">',
-        f'<meta property="og:title" content="{title}">',
-        f'<meta property="og:url" content="{page_url}">',
-        '<meta property="og:site_name" content="Preferred Frame">',
+        # avoid SEO duplication for rendered views
+        '<meta name="robots" content="noindex,follow">',
+        f'<meta name="description" content="Rendered Markdown view for {title}">',
     ]
     head_extra = "\n".join(head) + "\n"
 
-    out_dir = OUT / slug
-    out_html = out_dir / "index.html"
-    write_html(out_html, body, head_extra=head_extra, title=title)
+    write_html(dst_html, body_html, head_extra=head_extra, title=title)
 
+def build_simple_page_from_md(src_name: str, slug: str, title: str):
+    src_md = ROOT / src_name
+    if not src_md.exists():
+        return
+    dst_html = OUT / slug / "index.html"
+    render_markdown_file(src_md, dst_html, title)
 
 def write_md_like_page(out_html: Path, md_body: str, head_extra: str = ""):
-    body = md_body.replace("&","&amp;").replace("<","&lt;")
+    body = md_body.replace("&", "&amp;").replace("<", "&lt;")
     write_html(out_html, body, head_extra=head_extra)
 
 def crumb_link(parts: list[str]) -> str:
@@ -257,20 +378,24 @@ def crumb_link(parts: list[str]) -> str:
     base = ""
     for label in parts:
         base = base.rstrip("/") + "/" + quote(label)
-        html.append(' / ')
+        html.append(" / ")
         html.append(f'<a href="{base}/">📂 {label}</a>')
-    html.append('</nav>')
+    html.append("</nav>")
     return "".join(html)
 
 # ---------- dates ----------
 def _to_datetime(obj) -> datetime | None:
-    if isinstance(obj, datetime): return obj
-    if isinstance(obj, date):    return datetime.combine(obj, datetime.min.time())
+    if isinstance(obj, datetime):
+        return obj
+    if isinstance(obj, date):
+        return datetime.combine(obj, datetime.min.time())
     if isinstance(obj, str):
         s = obj.strip()
-        for fmt in ("%Y-%m-%d","%Y-%m","%Y"):
-            try: return datetime.strptime(s, fmt)
-            except Exception: pass
+        for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+            try:
+                return datetime.strptime(s, fmt)
+            except Exception:
+                pass
     return None
 
 def month_year(d) -> str:
@@ -280,28 +405,37 @@ def month_year(d) -> str:
     return dt.strftime("%B %Y")
 
 def scholar_date(x) -> str:
-    if isinstance(x, datetime): return x.strftime("%Y/%m/%d")
-    if isinstance(x, date):    return x.strftime("%Y/%m/%d")
+    if isinstance(x, datetime):
+        return x.strftime("%Y/%m/%d")
+    if isinstance(x, date):
+        return x.strftime("%Y/%m/%d")
     if isinstance(x, str):
         x = x.strip()
-        if not x: return ""
+        if not x:
+            return ""
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", x):
-            y,m,d = x.split("-"); return f"{y}/{m}/{d}"
+            y, m, d = x.split("-")
+            return f"{y}/{m}/{d}"
         if re.fullmatch(r"\d{4}-\d{2}", x):
-            y,m = x.split("-");   return f"{y}/{m}"
-        if re.fullmatch(r"\d{4}", x): return x
+            y, m = x.split("-")
+            return f"{y}/{m}"
+        if re.fullmatch(r"\d{4}", x):
+            return x
         return x.replace("-", "/")
     return ""
 
 def iso_date_str(x) -> str:
-    if isinstance(x, datetime): return x.date().isoformat()
-    if isinstance(x, date):     return x.isoformat()
-    if isinstance(x, str):      return x.strip()
+    if isinstance(x, datetime):
+        return x.date().isoformat()
+    if isinstance(x, date):
+        return x.isoformat()
+    if isinstance(x, str):
+        return x.strip()
     return str(x) if x else ""
 
 def extract_html_body(html_text: str) -> str:
-    m_open = re.search(r"<body[^>]*>", html_text, flags=re.IGNORECASE|re.DOTALL)
-    m_close = re.search(r"</body\s*>", html_text, flags=re.IGNORECASE|re.DOTALL)
+    m_open = re.search(r"<body[^>]*>", html_text, flags=re.IGNORECASE | re.DOTALL)
+    m_close = re.search(r"</body\s*>", html_text, flags=re.IGNORECASE | re.DOTALL)
     if m_open and m_close and m_close.start() > m_open.end():
         return html_text[m_open.end():m_close.start()]
     return html_text
@@ -309,9 +443,11 @@ def extract_html_body(html_text: str) -> str:
 # ---------- authors ----------
 def _orcid_url(v: str) -> str:
     v = (v or "").strip()
-    if not v: return ""
-    if v.startswith("http"): return v
-    m = re.search(r'(\d{4}-\d{4}-\d{4}-\d{3}[0-9Xx])', v)
+    if not v:
+        return ""
+    if v.startswith("http"):
+        return v
+    m = re.search(r"(\d{4}-\d{4}-\d{4}-\d{3}[0-9Xx])", v)
     return f"https://orcid.org/{m.group(1).upper()}" if m else ""
 
 def normalize_authors(auth_list):
@@ -322,40 +458,60 @@ def normalize_authors(auth_list):
             oc = _orcid_url(a.get("orcid") or a.get("id") or a.get("orcid_id") or "")
             em = (a.get("email") or "").strip()
         else:
-            nm = str(a).strip(); oc = ""; em = ""
+            nm = str(a).strip()
+            oc = ""
+            em = ""
         if not nm or nm.lower() == "name":
             continue
         item = {"name": nm}
-        if oc: item["orcid"] = oc
-        if em: item["email"] = em
+        if oc:
+            item["orcid"] = oc
+        if em:
+            item["email"] = em
         out.append(item)
     return out
 
 def fmt_author(a):
-    nm = a.get("name","").strip()
-    oc = _orcid_url(a.get("orcid","").strip())
-    if not nm: return ""
-    if oc: return f'{nm} (<a href="{oc}">ORCID</a>)'
+    nm = a.get("name", "").strip()
+    oc = _orcid_url(a.get("orcid", "").strip())
+    if not nm:
+        return ""
+    if oc:
+        return f'{nm} (<a href="{oc}">ORCID</a>)'
     return nm
 
 # ---------- article pages ----------
 def build_article_pages():
-    prints = ROOT/"prints"
-    if not prints.exists(): return
+    """
+    Build article pages for all provenance.yaml entries, regardless of journal.
 
+    For each directory with provenance.yaml (top/stem/prefix/suffix):
+      - Build a version page under site/prints/<stem>/<prefix>/<suffix>/index.html
+      - Also build the same article index at the mirrored location:
+            site/<top>/<stem>/<prefix>/<suffix>/index.html
+      - Build a 'stem' page under site/prints/<stem>/ only if that stem has at
+        least one version with journal == PREFERRED_JOURNAL.
+    """
     records = []
-    for prov in prints.glob("*/*/*/provenance.yaml"):
-        data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
+    for prov in iter_provenance_files():
+        try:
+            data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
 
-        # derive identifiers from path
-        stem = prov.parent.parent.parent.name
-        doi_prefix = prov.parent.parent.name
-        doi_suffix = prov.parent.name
+        rel_parts = rel(prov).parts
+        if len(rel_parts) < 4:
+            continue
 
-        # ---- NEW schema (preferred), with OLD fallbacks ----
-        pf_block = data.get("parsed_from_pnpmd") or {}  # older provenance
+        top = rel_parts[0]
+        stem = rel_parts[1]
+        doi_prefix = rel_parts[2]
+        doi_suffix = rel_parts[3]
 
-        # titles/abstract/keywords/authors/dates
+        journal = (data.get("journal") or "").strip()
+
+        pf_block = data.get("parsed_from_pnpmd") or {}
+
         title    = (data.get("title") or pf_block.get("title") or "") or ""
         abstract = (data.get("abstract") or pf_block.get("abstract") or "") or ""
         kws      = (data.get("keywords") or pf_block.get("keywords") or []) or []
@@ -367,10 +523,8 @@ def build_article_pages():
         )
         onesent = (onesent or "").strip()
 
-        # authors: new at top-level; old under parsed_from_pnpmd
         authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
 
-        # dates
         date_norm = (
             data.get("publication_date")
             or data.get("creation_date")
@@ -378,14 +532,12 @@ def build_article_pages():
             or ""
         )
 
-        # DOI / concept DOI
-        zenodo = data.get("zenodo") or {}  # very old
+        zenodo = data.get("zenodo") or {}
         doi     = (data.get("doi") or zenodo.get("doi") or "") or ""
         concept = (data.get("concept_doi") or zenodo.get("concept_doi") or "") or ""
 
-        # site/permalink/html_canonical
         permalink = (data.get("permalink") or "").strip()
-        site_block = data.get("site") or {}  # old
+        site_block = data.get("site") or {}
         html_canonical = (
             site_block.get("html_canonical")
             or site_block.get("permalink")
@@ -393,20 +545,19 @@ def build_article_pages():
             or ""
         ).strip()
 
-        # assets/artifacts (both shapes)
-        assets = (data.get("assets") or {})                 # old
-        canonical_assets = (data.get("canonical_assets") or {})  # very old
-        artifacts = (data.get("artifacts") or {})           # new
+        assets = (data.get("assets") or {})
+        canonical_assets = (data.get("canonical_assets") or {})
+        artifacts = (data.get("artifacts") or {})
 
-        # filenames in repo folder (prefer explicit names)
         md_name   = (artifacts.get("md") or artifacts.get("main") or None)
         html_name = (artifacts.get("html_name") or None)
         pmd_name  = (artifacts.get("pandoc_md_name") or artifacts.get("pandoc_md") or None)
-        add_old   = artifacts.get("additional") or {}  # old nesting
-        if not html_name: html_name = add_old.get("html")
-        if not pmd_name:  pmd_name  = add_old.get("pandoc_md")
+        add_old   = artifacts.get("additional") or {}
+        if not html_name:
+            html_name = add_old.get("html")
+        if not pmd_name:
+            pmd_name  = add_old.get("pandoc_md")
 
-        # derive names from URLs if needed
         if not md_name and artifacts.get("md_url"):
             md_name = Path(artifacts["md_url"]).name
         if not html_name and artifacts.get("html_url"):
@@ -414,7 +565,6 @@ def build_article_pages():
         if not pmd_name and artifacts.get("pandoc_md_url"):
             pmd_name = Path(artifacts["pandoc_md_url"]).name
 
-        # PDF: prefer explicit pdf_url (new). Fallbacks to assets/canonical_assets.
         assets_pdf = (
             artifacts.get("pdf_url")
             or _asset_url(assets.get("pdf"))
@@ -422,13 +572,12 @@ def build_article_pages():
             or ""
         )
 
-        # references: new top-level references_doi (list of URLs); old may not have
         references_doi = data.get("references_doi") or pf_block.get("references_doi") or []
         if not isinstance(references_doi, list):
             references_doi = [references_doi]
 
         records.append({
-            "prov": prov, "stem": stem,
+            "prov": prov, "top": top, "stem": stem,
             "doi_prefix": doi_prefix, "doi_suffix": doi_suffix,
             "title": title, "authors": authors,
             "abstract": abstract, "onesent": onesent,
@@ -438,14 +587,19 @@ def build_article_pages():
             "md_name": md_name, "html_name": html_name, "pmd_name": pmd_name,
             "html_canonical": html_canonical,
             "references_doi": references_doi,
+            "journal": journal,
         })
 
         json.dumps(records, indent=2, default=str)
 
-    # group by stem
-    groups = {}
+    if not records:
+        return
+
+    groups: dict[str, list[dict]] = {}
     for r in records:
         groups.setdefault(r["stem"], []).append(r)
+
+    origin = _current_origin()
 
     for stem, items in groups.items():
         def sort_key(it):
@@ -454,12 +608,13 @@ def build_article_pages():
         versions = sorted(items, key=sort_key, reverse=True)
         latest = versions[0]
 
-        # --- each VERSION page ---
+        # --- each VERSION page (for all journals) ---
         for it in versions:
-            src = it["prov"].parent
+            src = it["prov"].parent  # <top>/<stem>/<prefix>/<suffix>
             out_dir = OUT/"prints"/stem/it["doi_prefix"]/it["doi_suffix"]
             out_dir.mkdir(parents=True, exist_ok=True)
 
+            # mirror relevant files to OUT
             for f in src.iterdir():
                 if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
                     dst = OUT/rel(f)
@@ -479,17 +634,23 @@ def build_article_pages():
                     html_body = ""
 
             top_links = []
-            if local_md:  top_links.append(f'<a href="{local_md}">Markdown</a>')
-            if it["assets_pdf"]: top_links.append(f'<a href="{it["assets_pdf"]}">PDF</a>')
-            if local_pmd: top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
+            if local_md:
+                top_links.append(f'<a href="{local_md}">Markdown</a>')
+            if it["assets_pdf"]:
+                top_links.append(f'<a href="{it["assets_pdf"]}">PDF</a>')
+            if local_pmd:
+                top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
             breadcrumbs = crumb_link(["prints", stem, it["doi_prefix"], it["doi_suffix"]])
             files_list = []
             prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
-            if local_html: files_list.append(f'<li><a href="{local_html}">{it["html_name"]}</a></li>')
-            if local_md:   files_list.append(f'<li><a href="{local_md}">{it["md_name"]}</a></li>')
+            if local_html:
+                files_list.append(f'<li><a href="{local_html}">{it["html_name"]}</a></li>')
+            if local_md:
+                files_list.append(f'<li><a href="{local_md}">{it["md_name"]}</a></li>')
             files_list.append(f'<li><a href="{prov_local}">provenance.yaml</a></li>')
-            if it["assets_pdf"]: files_list.append(f'<li><a href="{it["assets_pdf"]}">PDF</a></li>')
+            if it["assets_pdf"]:
+                files_list.append(f'<li><a href="{it["assets_pdf"]}">PDF</a></li>')
             files_ul = "<ul>" + "".join(files_list) + "</ul>"
 
             display_authors = it["authors"]
@@ -499,8 +660,9 @@ def build_article_pages():
             body.append("<main class='paper'>")
             body.append(breadcrumbs)
             body.append(f"<h1>{it['title']}</h1>")
-            if authors_html: body.append(f"<p class='authors'>{authors_html}</p>")
-            body.append(f"<p class='publine'>Preferred Frame — {month_year(it['date'])}</p>")
+            if authors_html:
+                body.append(f"<p class='authors'>{authors_html}</p>")
+            body.append(f"<p class='publine'>{PREFERRED_JOURNAL} — {month_year(it['date'])}</p>")
             body.append("<p class='links'>" + " · ".join(top_links) + "</p>")
 
             if it["onesent"]:
@@ -518,8 +680,6 @@ def build_article_pages():
                 body.append("<h2>Article</h2>")
                 body.append(html_body)
 
-
-
             if it["references_doi"]:
                 body.append("<h2>References (DOI)</h2>")
                 refs_items = []
@@ -533,20 +693,22 @@ def build_article_pages():
 
             body.append("</main>")
 
-            version_url = f"{BASE_URL}/prints/{stem}/{it['doi_prefix']}/{it['doi_suffix']}/"
+            version_url = f"{origin}/prints/{stem}/{it['doi_prefix']}/{it['doi_suffix']}/"
             head = []
-            head.append('<meta charset="UTF-8">')
+            head.append('<meta charset="utf-8">')
             head.append(f'<link rel="canonical" href="{version_url}">')
             if it["assets_pdf"]:
                 head.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
             head.append('<meta name="robots" content="index,follow">')
-            if it['title']: head.append(f'<meta name="citation_title" content="{it["title"]}">')
+            if it["title"]:
+                head.append(f'<meta name="citation_title" content="{it["title"]}">')
             for a in display_authors:
-                nm = a.get("name","")
-                if nm: head.append(f'<meta name="citation_author" content="{nm}">')
+                nm = a.get("name", "")
+                if nm:
+                    head.append(f'<meta name="citation_author" content="{nm}">')
             if it["date"]:
                 head.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
-            head.append('<meta name="citation_journal_title" content="Preferred Frame">')
+            head.append(f'<meta name="citation_journal_title" content="{PREFERRED_JOURNAL}">')
             if it["assets_pdf"]:
                 head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
             if it["doi"]:
@@ -555,48 +717,62 @@ def build_article_pages():
             if desc:
                 head.append(f'<meta name="description" content="{desc}">')
                 head.append(f'<meta property="og:description" content="{desc}">')
-            head.append(f'<meta property="og:type" content="article">')
+            head.append('<meta property="og:type" content="article">')
             head.append(f'<meta property="og:title" content="{it["title"]}">')
             head.append(f'<meta property="og:url" content="{version_url}">')
 
             authors_ld = []
             for a in display_authors:
-                nm = a.get("name","").strip()
-                oc = _orcid_url(a.get("orcid","").strip())
-                if not nm: continue
-                ent = {"@type":"Person","name": nm}
-                if oc: ent["sameAs"] = [oc]
+                nm = a.get("name", "").strip()
+                oc = _orcid_url(a.get("orcid", "").strip())
+                if not nm:
+                    continue
+                ent = {"@type": "Person", "name": nm}
+                if oc:
+                    ent["sameAs"] = [oc]
                 authors_ld.append(ent)
             enc = []
             if it["assets_pdf"]:
-                enc.append({"@type":"MediaObject","contentUrl": it["assets_pdf"],"encodingFormat":"application/pdf"})
+                enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
             article_ld = {
-                "@context":"https://schema.org",
-                "@type":"Article",
+                "@context": "https://schema.org",
+                "@type": "Article",
                 "headline": it["title"],
-                "author": authors_ld or [{"@type":"Person","name":"Unknown"}],
+                "author": authors_ld or [{"@type": "Person", "name": "Unknown"}],
                 "datePublished": iso_date_str(it["date"]),
-                "isPartOf": {"@type":"Periodical","name":"Preferred Frame"},
-                "url": version_url
+                "isPartOf": {"@type": "Periodical", "name": PREFERRED_JOURNAL},
+                "url": version_url,
             }
-            if enc: article_ld["encoding"] = enc
+            if enc:
+                article_ld["encoding"] = enc
             if it["doi"]:
                 article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
             head.append(
                 '<script type="application/ld+json">'
                 + json.dumps(article_ld, ensure_ascii=False)
-                + '</script>'
+                + "</script>"
             )
             head_extra = "\n".join(head) + "\n"
+            body_html = "\n".join(body)
 
-            write_html(out_dir/"index.html", "\n".join(body), head_extra=head_extra)
+            # canonical article location under /prints/...
+            write_html(out_dir/"index.html", body_html, head_extra=head_extra)
 
-            # DOI alias
+            # alias by DOI prefix/suffix
             alias_dir = OUT/"prints"/"doi"/it["doi_prefix"]/it["doi_suffix"]
             alias_dir.mkdir(parents=True, exist_ok=True)
-            write_html(alias_dir/"index.html", "\n".join(body), head_extra=head_extra)
+            write_html(alias_dir/"index.html", body_html, head_extra=head_extra)
 
-        # --- STEM page (latest) ---
+            # ALSO: article page at the mirrored source location
+            mirror_dir = OUT / rel(src)
+            mirror_dir.mkdir(parents=True, exist_ok=True)
+            write_html(mirror_dir/"index.html", body_html, head_extra=head_extra)
+
+        # --- STEM page (latest) only if this stem has preferred-journal versions ---
+        has_preferred = any((v.get("journal") or "").strip() == PREFERRED_JOURNAL for v in versions)
+        if not has_preferred:
+            continue
+
         it = latest
         src = it["prov"].parent
         stem_out = OUT/"prints"/stem
@@ -632,16 +808,22 @@ def build_article_pages():
 
         files_list = []
         prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
-        if local_html: files_list.append(f'<li><a href="{local_html}">{it["html_name"]}</a></li>')
-        if local_md:   files_list.append(f'<li><a href="{local_md}">{it["md_name"]}</a></li>')
+        if local_html:
+            files_list.append(f'<li><a href="{local_html}">{it["html_name"]}</a></li>')
+        if local_md:
+            files_list.append(f'<li><a href="{local_md}">{it["md_name"]}</a></li>')
         files_list.append(f'<li><a href="{prov_local}">provenance.yaml</a></li>')
-        if it["assets_pdf"]: files_list.append(f'<li><a href="{it["assets_pdf"]}">PDF</a></li>')
+        if it["assets_pdf"]:
+            files_list.append(f'<li><a href="{it["assets_pdf"]}">PDF</a></li>')
         files_ul = "<ul>" + "".join(files_list) + "</ul>"
 
         top_links = []
-        if local_md:  top_links.append(f'<a href="{local_md}">Markdown (latest)</a>')
-        if it["assets_pdf"]: top_links.append(f'<a href="{it["assets_pdf"]}">PDF (latest)</a>')
-        if local_pmd: top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
+        if local_md:
+            top_links.append(f'<a href="{local_md}">Markdown (latest)</a>')
+        if it["assets_pdf"]:
+            top_links.append(f'<a href="{it["assets_pdf"]}">PDF (latest)</a>')
+        if local_pmd:
+            top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
         display_authors = it["authors"]
         authors_html = ", ".join(filter(None, (fmt_author(a) for a in display_authors)))
@@ -650,8 +832,9 @@ def build_article_pages():
         body.append("<main class='paper'>")
         body.append(breadcrumbs)
         body.append(f"<h1>{it['title']}</h1>")
-        if authors_html: body.append(f"<p class='authors'>{authors_html}</p>")
-        body.append(f"<p class='publine'>Preferred Frame — {month_year(it['date'])}</p>")
+        if authors_html:
+            body.append(f"<p class='authors'>{authors_html}</p>")
+        body.append(f"<p class='publine'>{PREFERRED_JOURNAL} — {month_year(it['date'])}</p>")
         body.append("<p class='links'>" + " · ".join(top_links) + "</p>")
         if versions_ul:
             body.append("<h2>Versions</h2>")
@@ -683,20 +866,22 @@ def build_article_pages():
                 body.append("<ul>" + "".join(refs_items) + "</ul>")
         body.append("</main>")
 
-        stem_url = f"{BASE_URL}/prints/{stem}/"
+        stem_url = f"{origin}/prints/{stem}/"
         head = []
-        head.append('<meta charset="UTF-8">')
+        head.append('<meta charset="utf-8">')
         head.append(f'<link rel="canonical" href="{stem_url}">')
         if it["assets_pdf"]:
             head.append(f'<link rel="alternate" type="application/pdf" href="{it["assets_pdf"]}">')
         head.append('<meta name="robots" content="index,follow">')
-        if it['title']: head.append(f'<meta name="citation_title" content="{it["title"]}">')
+        if it["title"]:
+            head.append(f'<meta name="citation_title" content="{it["title"]}">')
         for a in display_authors:
-            nm = a.get("name","")
-            if nm: head.append(f'<meta name="citation_author" content="{nm}">')
+            nm = a.get("name", "")
+            if nm:
+                head.append(f'<meta name="citation_author" content="{nm}">')
         if it["date"]:
             head.append(f'<meta name="citation_publication_date" content="{scholar_date(it["date"])}">')
-        head.append('<meta name="citation_journal_title" content="Preferred Frame">')
+        head.append(f'<meta name="citation_journal_title" content="{PREFERRED_JOURNAL}">')
         if it["assets_pdf"]:
             head.append(f'<meta name="citation_pdf_url" content="{it["assets_pdf"]}">')
         if it["doi"]:
@@ -704,38 +889,41 @@ def build_article_pages():
         desc = it["abstract"] or it["onesent"] or it["title"]
         if desc:
             head.append(f'<meta name="description" content="{desc}">')
-            head.append(f'<meta property="og:description" content="{desc}">')
-        head.append(f'<meta property="og:type" content="article">')
+        head.append(f'<meta property="og:description" content="{desc}">')
+        head.append('<meta property="og:type" content="article">')
         head.append(f'<meta property="og:title" content="{it["title"]}">')
         head.append(f'<meta property="og:url" content="{stem_url}">')
 
         authors_ld = []
         for a in display_authors:
-            nm = a.get("name","").strip()
-            oc = _orcid_url(a.get("orcid","").strip())
-            if not nm: continue
-            ent = {"@type":"Person","name": nm}
-            if oc: ent["sameAs"] = [oc]
+            nm = a.get("name", "").strip()
+            oc = _orcid_url(a.get("orcid", "").strip())
+            if not nm:
+                continue
+            ent = {"@type": "Person", "name": nm}
+            if oc:
+                ent["sameAs"] = [oc]
             authors_ld.append(ent)
         enc = []
         if it["assets_pdf"]:
-            enc.append({"@type":"MediaObject","contentUrl": it["assets_pdf"],"encodingFormat":"application/pdf"})
+            enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
         article_ld = {
-            "@context":"https://schema.org",
-            "@type":"Article",
+            "@context": "https://schema.org",
+            "@type": "Article",
             "headline": it["title"],
-            "author": authors_ld or [{"@type":"Person","name":"Unknown"}],
+            "author": authors_ld or [{"@type": "Person", "name": "Unknown"}],
             "datePublished": iso_date_str(it["date"]),
-            "isPartOf": {"@type":"Periodical","name":"Preferred Frame"},
-            "url": stem_url
+            "isPartOf": {"@type": "Periodical", "name": PREFERRED_JOURNAL},
+            "url": stem_url,
         }
-        if enc: article_ld["encoding"] = enc
+        if enc:
+            article_ld["encoding"] = enc
         if it["doi"]:
             article_ld["sameAs"] = [f"https://doi.org/{it['doi'].split('/')[-1]}"]
         head.append(
             '<script type="application/ld+json">'
             + json.dumps(article_ld, ensure_ascii=False)
-            + '</script>'
+            + "</script>"
         )
         head_extra = "\n".join(head) + "\n"
 
@@ -768,63 +956,85 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
             lines.append(f"- 📂 [{href}]({href})")
         else:
             p_rel = rel(it.path)
-            view = None
-            mirrored = OUT/p_rel
-            if mirrored.exists() and it.path.suffix.lower() in {".html",".md",".yaml",".yml",".pandoc.md"}:
-                view = "/" + mirrored.relative_to(OUT).as_posix()
+            mirrored = OUT / p_rel
+
             lines.append(f"- 📄 {it.name}")
-            if view:
-                lines.append(f"  - [open]({view})")
+            if mirrored.exists():
+                url_local = "/" + mirrored.relative_to(OUT).as_posix()
+                ext = it.path.suffix.lower()
+                if ext in MD_EXTS:
+                    gh_url = (
+                        f"https://github.com/{OWNER}/{REPO}/blob/"
+                        f"{BRANCH}/{p_rel.as_posix()}"
+                    )
+                    lines.append(
+                        f"  - [open]({url_local}) · [open rendered]({gh_url})"
+                    )
+                else:
+                    lines.append(f"  - [open]({url_local})")
     lines.append("")
     return "\n".join(lines)
 
 def copy_static():
     OUT.mkdir(parents=True, exist_ok=True)
     for name in ["submit.html"]:
-        src = SRC/name
+        src = SRC / name
         if src.exists():
-            dst = OUT/name
+            dst = OUT / name
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
 # ---------- sitemap & robots ----------
 def _url_from_out_path(p: Path) -> str:
-    """Map a file under OUT/ to its URL (canonical dir URL for index.html)."""
+    """
+    Return a *path only* (starting with /) for this file under OUT,
+    or '' if it should not appear in the sitemap.
+
+    - index.html at root         -> '/'
+    - foo/bar/index.html         -> '/foo/bar/'
+    - any other *.html           -> '/foo/bar/baz.html'
+    - any *.md                   -> '/foo/bar/baz.md'
+
+    The returned path is URL-encoded (spaces, apostrophes, etc.).
+    """
     rp = rel_out(p).as_posix()
-    if rp == "index.html":
-        return f"{BASE_URL}/"
-    if rp.endswith("/index.html"):
-        return f"{BASE_URL}/" + rp[:-10]  # strip 'index.html'
-    # only include root-level html otherwise (e.g., submit.html)
-    if p.suffix.lower() == ".html" and p.parent == OUT:
-        return f"{BASE_URL}/" + rp
-    return ""  # ignore other files
+    suf = p.suffix.lower()
+
+    if suf == ".html":
+        if rp == "index.html":
+            path = "/"
+        elif rp.endswith("/index.html"):
+            path = "/" + rp[:-10]
+        else:
+            path = "/" + rp
+    elif suf == ".md":
+        path = "/" + rp
+    else:
+        return ""
+
+    # URL-encode, but keep path separators and common safe chars
+    return quote(path, safe="/:@-._~")
 
 def build_sitemap_and_robots():
-    # Canonical origin: ENV → provenance → BASE_URL
-    origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
-
-    def _remap_origin(loc: str) -> str:
-        """Replace scheme+host in loc with canonical origin, keep the path."""
-        try:
-            p = urlparse(loc)
-            return f"{origin}{p.path}"
-        except Exception:
-            return loc
+    origin = _current_origin()
 
     urls = []
-    for path in OUT.rglob("*.html"):
+    for path in OUT.rglob("*"):
         if path.name.startswith("."):
             continue
-        loc = _url_from_out_path(path)
-        if not loc:
+        if path.suffix.lower() not in {".html", ".md"}:
             continue
-        loc = _remap_origin(loc)
+
+        rel_url = _url_from_out_path(path)
+        if not rel_url:
+            continue
+
+        loc = origin + rel_url
         mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         lastmod = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
         urls.append((loc, lastmod))
 
-    # de-dup, keep latest lastmod
+    # dedupe by loc, keep latest lastmod
     seen = {}
     for loc, lastmod in urls:
         if (loc not in seen) or (lastmod > seen[loc]):
@@ -857,26 +1067,25 @@ def build_sitemap_and_robots():
 
 # ---------- RSS ----------
 def build_rss_feed():
-    """
-    Produce /rss.xml with one item per STEM (latest version).
-    Compatible with both old and new provenance schemas.
-    """
-    origin = (os.getenv("BASE_URL") or _canonical_origin_from_provenance() or BASE_URL).rstrip("/")
-
-    prints = ROOT / "prints"
-    if not prints.exists():
-        return
+    origin = _current_origin()
 
     by_stem = {}
-    for prov in prints.glob("*/*/*/provenance.yaml"):
+    for prov in iter_provenance_files():
         try:
             data = yaml.safe_load(prov.read_text(encoding="utf-8")) or {}
         except Exception:
             continue
 
-        stem = prov.parent.parent.parent.name
+        journal = (data.get("journal") or "").strip()
+        if journal and journal != PREFERRED_JOURNAL:
+            continue
 
-        pf_block = data.get("parsed_from_pnpmd") or {}  # old
+        rel_parts = rel(prov).parts
+        if len(rel_parts) < 2:
+            continue
+        stem = rel_parts[1]
+
+        pf_block = data.get("parsed_from_pnpmd") or {}
         title    = (data.get("title") or pf_block.get("title") or stem)
         authors  = normalize_authors(data.get("authors") or pf_block.get("authors"))
         abstract = (data.get("abstract") or pf_block.get("abstract") or "")
@@ -889,7 +1098,6 @@ def build_rss_feed():
         date_norm= (data.get("publication_date") or data.get("creation_date") or pf_block.get("date") or None)
         doi      = (data.get("doi") or (data.get("zenodo") or {}).get("doi") or "")
 
-        # URL: prefer top-level permalink, else stem page
         permalink = (data.get("permalink") or "").strip()
         if permalink and permalink.startswith("http"):
             item_url = permalink.rstrip("/")
@@ -898,7 +1106,6 @@ def build_rss_feed():
 
         dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
         keep = by_stem.get(stem)
-        # kept date is stored under "date", not "dt"
         if not keep or dt > keep["date"]:
             by_stem[stem] = {
                 "stem": stem,
@@ -911,14 +1118,16 @@ def build_rss_feed():
                 "doi": doi,
             }
 
+    if not by_stem:
+        return
 
     fg = FeedGenerator()
-    fg.load_extension('podcast')
-    fg.title('Preferred Frame — Publications')
-    fg.link(href=origin+'/', rel='alternate')
-    fg.link(href=origin+'/rss.xml', rel='self')
-    fg.description('Latest publications from Preferred Frame')
-    fg.language('en')
+    fg.load_extension("podcast")
+    fg.title(f"{PREFERRED_JOURNAL} — Publications")
+    fg.link(href=origin + "/", rel="alternate")
+    fg.link(href=origin + "/rss.xml", rel="self")
+    fg.description(f"Latest publications from {PREFERRED_JOURNAL}")
+    fg.language("en")
 
     items = sorted(by_stem.values(), key=lambda x: x["date"], reverse=True)
     for it in items:
@@ -930,15 +1139,15 @@ def build_rss_feed():
         if desc:
             fe.description(desc)
         for a in it["authors"]:
-            nm = a.get("name","").strip()
+            nm = a.get("name", "").strip()
             if nm:
-                fe.author({'name': nm})
+                fe.author({"name": nm})
         fe.pubDate(it["date"].astimezone(timezone.utc))
         if it["doi"]:
-            fe.link(href=f'https://doi.org/{it["doi"].split("/")[-1]}', rel='related')
+            fe.link(href=f'https://doi.org/{it["doi"].split("/")[-1]}', rel="related")
 
-    rss_xml = fg.rss_str(pretty=True).decode('utf-8')
-    (OUT / 'rss.xml').write_text(rss_xml, encoding='utf-8')
+    rss_xml = fg.rss_str(pretty=True).decode("utf-8")
+    (OUT / "rss.xml").write_text(rss_xml, encoding="utf-8")
 
 # ---------- build ----------
 def main():
@@ -946,15 +1155,12 @@ def main():
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
 
-    # --- debug: paths and environment ---
     print(f"[DEBUG] ROOT: {ROOT}")
     print(f"[DEBUG] OUT:  {OUT}")
     print(f"[DEBUG] SRC:  {SRC}")
     print(f"[DEBUG] BASE_URL: {BASE_URL}")
+    print(f"[DEBUG] gitignored paths: {len(GITIGNORED_PATHS)}")
 
-    # Replicate simple site assets from .scripts/src/site/ → site/
-    # - .md files: header + raw markdown + footer (+ coda via write_html), saved as *.md.html
-    # - everything else: copied verbatim, preserving tree
     site_src = SRC / "site"
     print(f"[DEBUG] site_src: {site_src} (exists={site_src.exists()})")
 
@@ -962,18 +1168,13 @@ def main():
         for src_path in site_src.rglob("*"):
             if not src_path.is_file():
                 continue
-
             rel_path = src_path.relative_to(site_src)
             print(f"[DEBUG] site asset found: {rel_path}")
-
             if src_path.suffix.lower() == ".md":
-                # about.md → about.md.html (same relative folder)
                 dst_rel = rel_path.with_suffix(rel_path.suffix + ".html")
                 dst_path = OUT / dst_rel
-                print(f"[DEBUG]   MD -> {dst_rel}")
-                md_body = src_path.read_text(encoding="utf-8")
-                dst_path.parent.mkdir(parents=True, exist_ok=True)
-                write_html(dst_path, md_body, head_extra="", title=rel_path.stem)
+                print(f"[DEBUG]   MD (site) -> {dst_rel}")
+                render_markdown_file(src_path, dst_path, title=rel_path.stem)
             else:
                 dst_path = OUT / rel_path
                 print(f"[DEBUG]   COPY -> {rel_path} → {dst_path.relative_to(OUT)}")
@@ -982,98 +1183,101 @@ def main():
     else:
         print("[DEBUG] WARNING: site_src does not exist; no site/ assets copied")
 
-
-
-    # Build article/stem/version pages for ALL prints (needed to host files)
     build_article_pages()
 
-    # Decide which stems to hide from directory listings
     hidden_stems = hidden_stems_from_provenance()
 
-    # Directory listings (skip hidden stems only from listings; still mirror others)
     for dirpath, dirnames, filenames in os.walk(ROOT):
         d = Path(dirpath)
 
-        # Never descend into the output site
+        # skip gitignored dirs (prune)
+        if is_gitignored(d):
+            dirnames.clear()
+            continue
+
+        # never descend into already-built site/
         if d == OUT:
             dirnames.clear()
             continue
 
-        # If we're under prints/<stem>/... and stem is hidden, skip listing for this subtree
-        if "prints" in d.parts:
-            i = d.parts.index("prints")
-            if len(d.parts) >= i+2 and d.parts[i+1] in hidden_stems:
-                dirnames.clear()
-                continue
-
-        # Normal pruning
+        # normal pruning
         if dirpath != str(ROOT):
             first = Path(dirpath).relative_to(ROOT).parts[0]
             if first in EXCLUDE_NAMES:
-                dirnames.clear(); continue
+                dirnames.clear()
+                continue
             if (Path(dirpath)/"pyvenv.cfg").exists():
-                dirnames.clear(); continue
+                dirnames.clear()
+                continue
 
-        # Filter child dirs
+        # filter child dirs (we only hide stems from index, not from mirroring)
         keep=[]
         for dd in list(dirnames):
-            # If we are exactly at prints/, drop hidden stems from listing
-            if d == ROOT / "prints" and dd in hidden_stems:
+            child = Path(dirpath) / dd
+            if is_gitignored(child):
                 continue
-            if dd in EXCLUDE_NAMES: continue
-            if dd.startswith(".") and dd != ".well-known": continue
-            if (Path(dirpath)/dd/"pyvenv.cfg").exists(): continue
+            if dd in EXCLUDE_NAMES:
+                continue
+            if dd.startswith(".") and dd != ".well-known":
+                continue
+            if (Path(dirpath)/dd/"pyvenv.cfg").exists():
+                continue
             keep.append(dd)
         dirnames[:] = keep
 
-        # Mirror selected files
+        # Mirror ALL files (except ignored/root index.html)
         for fname in filenames:
+            p = d / fname
             if fname.startswith("."):
                 continue
-            p = d / fname
-            ext = p.suffix.lower()
-
-            # 1) Root-level simple pages: about.md, submissions.md, policies.md, journals.md
-            if (
-                d == ROOT
-                and fname in {"about.md", "submissions.md", "policies.md", "journals.md"}
-                and ext in MIRROR_EXTS
-            ):
-                dst = OUT / rel(p)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(p, dst)
+            if is_gitignored(p):
                 continue
 
-            # 2) Prints subtree: mirror as before, but skip hidden stems
-            if ext in MIRROR_EXTS and "prints" in p.parts:
-                try:
-                    i = p.parts.index("prints")
-                    if len(p.parts) >= i + 2 and p.parts[i + 1] in hidden_stems:
-                        continue
-                except ValueError:
-                    pass
-                dst = OUT / rel(p)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(p, dst)
+            if d == ROOT and fname == "index.html":
+                continue
 
-        # Build dir index only if not already present
+            dst = OUT / rel(p)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dst)
+
+            if p.suffix.lower() == ".md":
+                rendered_dst = dst.with_suffix(dst.suffix + ".html")  # foo.md -> foo.md.html
+                render_markdown_file(p, rendered_dst, title=p.stem)
+
+        # Build dir index only if not already present, and not within a hidden stem
+        rel_parts_d = rel(d).parts if d != ROOT else ()
+        in_hidden_stem = (
+            len(rel_parts_d) >= 2 and (rel_parts_d[0], rel_parts_d[1]) in hidden_stems
+        )
+
         out_html = (OUT/rel(d)/"index.html") if d != ROOT else (OUT/"index.html")
-        if out_html.exists():
+        if out_html.exists() or in_hidden_stem:
             continue
 
         items = []
         # Dirs
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
-            if p.name in EXCLUDE_NAMES: continue
-            if p.name.startswith(".") and p.name != ".well-known": continue
-            if d == ROOT / "prints" and p.name in hidden_stems:
+            if is_gitignored(p):
                 continue
-            if (p/"pyvenv.cfg").exists(): continue
+            if p.name in EXCLUDE_NAMES:
+                continue
+            if p.name.startswith(".") and p.name != ".well-known":
+                continue
+            if (p/"pyvenv.cfg").exists():
+                continue
+            p_rel_parts = rel(p).parts
+            if len(p_rel_parts) >= 2 and (p_rel_parts[0], p_rel_parts[1]) in hidden_stems:
+                continue
             items.append(Item(name=p.name, is_dir=True, mtime=p.stat().st_mtime, path=p))
         # Files
         for p in sorted([x for x in d.iterdir() if x.is_file() and not x.name.startswith(".")],
                         key=lambda x: x.name.lower()):
-            if p.name in EXCLUDE_NAMES: continue
+            if is_gitignored(p):
+                continue
+            if p.name in EXCLUDE_NAMES:
+                continue
+            if d == ROOT and p.name == "CNAME":
+                continue
             items.append(Item(name=p.name, is_dir=False, mtime=p.stat().st_mtime, path=p))
 
         md_body = format_dir_index(d, items)
