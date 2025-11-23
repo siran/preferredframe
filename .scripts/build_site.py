@@ -29,7 +29,9 @@ MIRROR_EXTS = {
 
 MD_EXTS = {".md", ".markdown", ".pandoc.md"}
 
-PREFERRED_JOURNAL = "Preferred Frame"
+# ---------- Journal naming based on CNAME ----------
+DEFAULT_JOURNAL = "Preferred Frame"
+PREFERRED_JOURNAL = DEFAULT_JOURNAL
 
 # ---------- repo autodetect ----------
 def _parse_remote(url: str):
@@ -92,10 +94,6 @@ SRC  = ROOT / ".scripts" / "src"
 
 # ---------- .gitignore handling ----------
 def load_gitignored_paths() -> set[Path]:
-    """
-    Use git to list paths ignored by .gitignore and friends.
-    Only untracked ignored paths are returned (standard git behavior).
-    """
     try:
         out = subprocess.check_output(
             ["git", "ls-files", "-i", "--exclude-standard", "--others", "--directory"],
@@ -117,9 +115,6 @@ def load_gitignored_paths() -> set[Path]:
 GITIGNORED_PATHS = load_gitignored_paths()
 
 def is_gitignored(path: Path) -> bool:
-    """
-    True if 'path' is itself git-ignored or lies under an ignored path.
-    """
     p = path.resolve()
     for ign in GITIGNORED_PATHS:
         try:
@@ -141,26 +136,16 @@ def compute_base_url() -> str:
 BASE_URL = compute_base_url()
 
 def write_cname_if_custom(base_url: str) -> None:
-    """
-    Ensure the deployed site/ has a CNAME when using a custom domain.
-
-    Priority:
-    1. If ROOT/CNAME exists, copy it into OUT/CNAME (mirrors branch-based behavior).
-    2. Otherwise, infer host from BASE_URL and, if it's a custom host, write CNAME.
-    """
-    # 1) Mirror committed CNAME if present
     root_cname = ROOT / "CNAME"
     if root_cname.exists():
         OUT.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root_cname, OUT / "CNAME")
         return
 
-    # 2) Fallback: infer from BASE_URL
     host = urlparse(base_url).hostname
     if not host:
         return
     if host.endswith(".github.io"):
-        # default GitHub Pages domain: no custom CNAME
         return
     if host in {"localhost", "127.0.0.1"}:
         return
@@ -186,7 +171,6 @@ class Item:
     path: Path
 
 def _asset_url(x) -> str:
-    """Accept str or dict; return URL/path string or ''."""
     if not x:
         return ""
     if isinstance(x, str):
@@ -196,10 +180,6 @@ def _asset_url(x) -> str:
     return ""
 
 def _canonical_origin_from_provenance() -> str | None:
-    """
-    Infer canonical origin from provenance (new: top-level 'permalink';
-    old: site.permalink or site.html_canonical).
-    """
     try:
         prints_dir = ROOT / "prints"
         if not prints_dir.exists():
@@ -222,10 +202,6 @@ def _canonical_origin_from_provenance() -> str | None:
     return None
 
 def iter_provenance_files():
-    """
-    Yield all provenance.yaml files in the repo (except OUT and excluded),
-    ignoring gitignored paths.
-    """
     for top in ROOT.iterdir():
         if not top.is_dir():
             continue
@@ -241,11 +217,6 @@ def iter_provenance_files():
             yield prov
 
 def hidden_stems_from_provenance() -> set[tuple[str, str]]:
-    """
-    Stems {(top, stem)} for which *all* provenance entries have a journal
-    different from PREFERRED_JOURNAL. These must not appear in index listings,
-    but their files and article pages are still mirrored/built.
-    """
     stems_with_pref: set[tuple[str, str]] = set()
     stems_with_nonpref: set[tuple[str, str]] = set()
 
@@ -272,11 +243,6 @@ def hidden_stems_from_provenance() -> set[tuple[str, str]]:
     return {k for k in stems_with_nonpref if k not in stems_with_pref}
 
 def _origin_from_cname() -> str | None:
-    """
-    If there is a CNAME, use it as the canonical origin, e.g.
-    CNAME: writing.preferredframe.com
-    -> https://writing.preferredframe.com
-    """
     for base in (ROOT, OUT):
         cname = base / "CNAME"
         if not cname.exists():
@@ -287,9 +253,16 @@ def _origin_from_cname() -> str | None:
             continue
         if not first_line:
             continue
-        # assume https for canonical origin
         return f"https://{first_line}"
     return None
+
+def _current_origin() -> str:
+    return (
+        _origin_from_cname()
+        or _canonical_origin_from_provenance()
+        or os.getenv("BASE_URL")
+        or BASE_URL
+    ).rstrip("/")
 
 # ---------- templating ----------
 def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str = ""):
@@ -325,25 +298,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(doc, encoding="utf-8")
 
-def _current_origin() -> str:
-    """
-    Shared origin resolution:
-    CNAME > provenance > env BASE_URL > computed BASE_URL
-    """
-    return (
-        False
-        or _canonical_origin_from_provenance()
-        or _origin_from_cname()
-        or os.getenv("BASE_URL")
-        or BASE_URL
-    ).rstrip("/")
-
 def render_markdown_file(src: Path, dst_html: Path, title: str):
-    """
-    Render a Markdown-like file into dst_html by:
-    - keeping the raw markdown text as body (no pandoc, no HTML conversion),
-    - wrapping it with header/footer/coda via write_html.
-    """
     md = src.read_text(encoding="utf-8")
     body_html = md
 
@@ -481,9 +436,8 @@ def fmt_author(a):
 
 # ---------- article pages ----------
 def build_article_pages():
-    """
-    Build article pages for all provenance.yaml entries, regardless of journal.
-    """
+    origin = _current_origin()
+
     records = []
     for prov in iter_provenance_files():
         try:
@@ -591,22 +545,20 @@ def build_article_pages():
     for r in records:
         groups.setdefault(r["stem"], []).append(r)
 
-    origin = _current_origin()
-
     for stem, items in groups.items():
         def sort_key(it):
             dt = _to_datetime(it["date"])
             return dt or datetime.fromtimestamp(it["prov"].stat().st_mtime)
+
         versions = sorted(items, key=sort_key, reverse=True)
         latest = versions[0]
 
-        # --- each VERSION page (for all journals) ---
+        # --- each VERSION page ---
         for it in versions:
-            src = it["prov"].parent  # <top>/<stem>/<prefix>/<suffix>
+            src = it["prov"].parent
             out_dir = OUT/"prints"/stem/it["doi_prefix"]/it["doi_suffix"]
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            # mirror relevant files to OUT
             for f in src.iterdir():
                 if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
                     dst = OUT/rel(f)
@@ -685,7 +637,9 @@ def build_article_pages():
 
             body.append("</main>")
 
-            version_url = f"{origin}/prints/{stem}/{it['doi_prefix']}/{it['doi_suffix']}/"
+            stem_seg = quote(stem, safe="")
+            version_url = f"{origin}/prints/{stem_seg}/{it['doi_prefix']}/{it['doi_suffix']}/"
+
             head = []
             head.append('<meta charset="utf-8">')
             head.append(f'<link rel="canonical" href="{version_url}">')
@@ -725,7 +679,11 @@ def build_article_pages():
                 authors_ld.append(ent)
             enc = []
             if it["assets_pdf"]:
-                enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
+                enc.append({
+                    "@type": "MediaObject",
+                    "contentUrl": it["assets_pdf"],
+                    "encodingFormat": "application/pdf",
+                })
             article_ld = {
                 "@context": "https://schema.org",
                 "@type": "Article",
@@ -747,24 +705,17 @@ def build_article_pages():
             head_extra = "\n".join(head) + "\n"
             body_html = "\n".join(body)
 
-            # canonical article location under /prints/...
             write_html(out_dir/"index.html", body_html, head_extra=head_extra)
 
-            # alias by DOI prefix/suffix
             alias_dir = OUT/"prints"/"doi"/it["doi_prefix"]/it["doi_suffix"]
             alias_dir.mkdir(parents=True, exist_ok=True)
             write_html(alias_dir/"index.html", body_html, head_extra=head_extra)
 
-            # ALSO: article page at the mirrored source location
             mirror_dir = OUT / rel(src)
             mirror_dir.mkdir(parents=True, exist_ok=True)
             write_html(mirror_dir/"index.html", body_html, head_extra=head_extra)
 
-        # --- STEM page (latest) only if this stem has preferred-journal versions ---
-        has_preferred = any((v.get("journal") or "").strip() == PREFERRED_JOURNAL for v in versions)
-        if not has_preferred:
-            continue
-
+        # --- STEM page (latest) ---
         it = latest
         src = it["prov"].parent
         stem_out = OUT/"prints"/stem
@@ -858,7 +809,8 @@ def build_article_pages():
                 body.append("<ul>" + "".join(refs_items) + "</ul>")
         body.append("</main>")
 
-        stem_url = f"{origin}/prints/{stem}/"
+        stem_seg = quote(stem, safe="")
+        stem_url = f"{origin}/prints/{stem_seg}/"
         head = []
         head.append('<meta charset="utf-8">')
         head.append(f'<link rel="canonical" href="{stem_url}">')
@@ -881,7 +833,7 @@ def build_article_pages():
         desc = it["abstract"] or it["onesent"] or it["title"]
         if desc:
             head.append(f'<meta name="description" content="{desc}">')
-        head.append(f'<meta property="og:description" content="{desc}">')
+            head.append(f'<meta property="og:description" content="{desc}">')
         head.append('<meta property="og:type" content="article">')
         head.append(f'<meta property="og:title" content="{it["title"]}">')
         head.append(f'<meta property="og:url" content="{stem_url}">')
@@ -898,7 +850,11 @@ def build_article_pages():
             authors_ld.append(ent)
         enc = []
         if it["assets_pdf"]:
-            enc.append({"@type": "MediaObject", "contentUrl": it["assets_pdf"], "encodingFormat": "application/pdf"})
+            enc.append({
+                "@type": "MediaObject",
+                "contentUrl": it["assets_pdf"],
+                "encodingFormat": "application/pdf",
+            })
         article_ld = {
             "@context": "https://schema.org",
             "@type": "Article",
@@ -960,7 +916,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
                         f"{BRANCH}/{p_rel.as_posix()}"
                     )
                     lines.append(
-                        f"  - [open]({url_local}) · [open rendered]({gh_url})"
+                        f"  - [open md]({url_local}) · [open rendered md]({gh_url})"
                     )
                 else:
                     lines.append(f"  - [open]({url_local})")
@@ -978,17 +934,6 @@ def copy_static():
 
 # ---------- sitemap & robots ----------
 def _url_from_out_path(p: Path) -> str:
-    """
-    Return a *path only* (starting with /) for this file under OUT,
-    or '' if it should not appear in the sitemap.
-
-    - index.html at root         -> '/'
-    - foo/bar/index.html         -> '/foo/bar/'
-    - any other *.html           -> '/foo/bar/baz.html'
-    - any *.md                   -> '/foo/bar/baz.md'
-
-    The returned path is URL-encoded (spaces, apostrophes, etc.).
-    """
     rp = rel_out(p).as_posix()
     suf = p.suffix.lower()
 
@@ -1004,26 +949,10 @@ def _url_from_out_path(p: Path) -> str:
     else:
         return ""
 
-    # URL-encode, but keep path separators and common safe chars
     return quote(path, safe="/:@-._~")
 
-
 def build_sitemap_and_robots():
-    """
-    Build sitemap.xml and robots.txt for THIS site.
-
-    Origin resolution for sitemap:
-        CNAME > BASE_URL env > computed BASE_URL
-
-    Provenance is intentionally ignored here so that cross-host
-    provenance (e.g. preprints/preferredframe) does not hijack
-    the sitemap domain.
-    """
-    origin = (
-        _origin_from_cname()
-        or os.getenv("BASE_URL")
-        or BASE_URL
-    ).rstrip("/")
+    origin = _current_origin()
 
     urls = []
     for path in OUT.rglob("*"):
@@ -1041,7 +970,6 @@ def build_sitemap_and_robots():
         lastmod = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
         urls.append((loc, lastmod))
 
-    # dedupe by loc, keep latest lastmod
     seen = {}
     for loc, lastmod in urls:
         if (loc not in seen) or (lastmod > seen[loc]):
@@ -1109,7 +1037,7 @@ def build_rss_feed():
         if permalink and permalink.startswith("http"):
             item_url = permalink.rstrip("/")
         else:
-            item_url = f"{origin}/prints/{stem}/"
+            item_url = f"{origin}/prints/{quote(stem, safe='')}/"
 
         dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
         keep = by_stem.get(stem)
@@ -1197,17 +1125,14 @@ def main():
     for dirpath, dirnames, filenames in os.walk(ROOT):
         d = Path(dirpath)
 
-        # skip gitignored dirs (prune)
         if is_gitignored(d):
             dirnames.clear()
             continue
 
-        # never descend into already-built site/
         if d == OUT:
             dirnames.clear()
             continue
 
-        # normal pruning
         if dirpath != str(ROOT):
             first = Path(dirpath).relative_to(ROOT).parts[0]
             if first in EXCLUDE_NAMES:
@@ -1217,7 +1142,6 @@ def main():
                 dirnames.clear()
                 continue
 
-        # filter child dirs (we only hide stems from index, not from mirroring)
         keep=[]
         for dd in list(dirnames):
             child = Path(dirpath) / dd
@@ -1232,7 +1156,6 @@ def main():
             keep.append(dd)
         dirnames[:] = keep
 
-        # Mirror ALL files (except ignored/root index.html)
         for fname in filenames:
             p = d / fname
             if fname.startswith("."):
@@ -1248,10 +1171,9 @@ def main():
             shutil.copy2(p, dst)
 
             if p.suffix.lower() == ".md":
-                rendered_dst = dst.with_suffix(dst.suffix + ".html")  # foo.md -> foo.md.html
+                rendered_dst = dst.with_suffix(dst.suffix + ".html")
                 render_markdown_file(p, rendered_dst, title=p.stem)
 
-        # Build dir index only if not already present, and not within a hidden stem
         rel_parts_d = rel(d).parts if d != ROOT else ()
         in_hidden_stem = (
             len(rel_parts_d) >= 2 and (rel_parts_d[0], rel_parts_d[1]) in hidden_stems
@@ -1262,7 +1184,6 @@ def main():
             continue
 
         items = []
-        # Dirs
         for p in sorted([x for x in d.iterdir() if x.is_dir()], key=lambda x: x.name.lower()):
             if is_gitignored(p):
                 continue
@@ -1276,7 +1197,7 @@ def main():
             if len(p_rel_parts) >= 2 and (p_rel_parts[0], p_rel_parts[1]) in hidden_stems:
                 continue
             items.append(Item(name=p.name, is_dir=True, mtime=p.stat().st_mtime, path=p))
-        # Files
+
         for p in sorted([x for x in d.iterdir() if x.is_file() and not x.name.startswith(".")],
                         key=lambda x: x.name.lower()):
             if is_gitignored(p):
@@ -1294,5 +1215,37 @@ def main():
     build_sitemap_and_robots()
     build_rss_feed()
 
+def _compute_preferred_journal() -> str:
+    """
+    Determine journal name from canonical origin (host).
+
+    Mapping:
+      writing.preferredframe.com   → Preferred Frame Writing
+      preprints.preferredframe.com → Preferred Frame Pre-Prints
+      preferredframe.com (root)    → Preferred Frame
+    """
+    from urllib.parse import urlparse
+
+    host = ""
+    try:
+        # read exactly the same origin logic used everywhere else
+        from __main__ import _current_origin  # safe because resolved after import
+        origin = _current_origin()
+        host = (urlparse(origin).hostname or "").lower()
+    except Exception:
+        return DEFAULT_JOURNAL
+
+    if host.startswith("writing."):
+        return "Preferred Frame Writing"
+    if host.startswith("preprints."):
+        return "Preferred Frame Pre-Prints"
+    return DEFAULT_JOURNAL
+
 if __name__ == "__main__":
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT/".nojekyll").write_text("", encoding="utf-8")
+
+    write_cname_if_custom(BASE_URL)
+
+    PREFERRED_JOURNAL = _compute_preferred_journal()
     main()
