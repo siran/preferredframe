@@ -1,8 +1,11 @@
 <meta charset="utf-8">
 <style>
-    /* modest page margin */
+
+    h1, h2,h3,h4,h5,h6 {font-size: 1em; display:inline-block;}
+
+    /* default: raw markdown view (no JS) */
     body {
-        white-space: pre-wrap;
+        white-space: preserve-breaks;
         font-family: monospace;
         font-size: 18px;
         line-height: 1.5;
@@ -29,22 +32,31 @@
     main.paper * {
         white-space: normal;
     }
+
 </style>
 <script>
     (function () {
         try {
             var html = document.body.innerHTML;
-            var i = html.indexOf('<meta');
-            var pre = i >= 0 ? html.slice(0, i) : html;
 
-            // Markdown links: allow spaces; trim
-            pre = pre.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
+            // Markdown headings: lines starting with 1–6 '#' + space
+            // "# Title" -> <h1>Title</h1>, etc.
+            html = html.replace(/(^|\n)(#{1,6})\s+([^\n]+)/g, function (_m, prefix, hashes, text) {
+                var level = hashes.length;
+                if (level > 6) level = 6;
+                return '<h' + level + '>' + text.trim() + '</h' + level + '>';
+            });
+
+            // Markdown links: [text](url)
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
                 return '<a href="' + u.trim() + '">' + t + '</a>';
             });
 
-            // Bare URLs → <a>; don't match inside ](URL)
-            pre = pre.replace(/(^|\s)((https?:\/\/[^\s)]+))/g, '$1<a href="$2">$2</a>');
-            document.body.innerHTML = pre + (i >= 0 ? html.slice(i) : '');
+            // Bare URLs → <a>; avoid those already inside ](url)
+            html = html.replace(/(^|\s)((https?:\/\/[^\s)]+))/g, '$1<a href="$2">$2</a>');
+
+            document.body.innerHTML = html;
+
         } catch (e) { }
     })();
 </script>

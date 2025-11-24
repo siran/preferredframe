@@ -161,7 +161,12 @@ def rel_out(p: Path) -> Path:
     return p.relative_to(OUT)
 
 def load_text(p: Path) -> str:
-    return p.read_text(encoding="utf-8") if p.exists() else ""
+    text = p.read_text(encoding="utf-8")
+
+    # remove exactly one trailing newline
+    if text.endswith("\n"):
+        return text[:-1]
+    return text
 
 @dataclass
 class Item:
@@ -272,14 +277,32 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
 
     doc = "".join(s for s in (header, body_html, footer) if s)
 
+    # --- ensure <head> and a deterministic <title> for SEO ---
+    page_title = (title or "").strip() or PREFERRED_JOURNAL
+    if page_title == PREFERRED_JOURNAL:
+        full_title = PREFERRED_JOURNAL
+    else:
+        full_title = f"{page_title} — {PREFERRED_JOURNAL}"
+    title_tag = f"<title>{full_title}</title>"
+
+    # If there's no <head>, wrap the document in a minimal shell
+    if not re.search(r"<head[^>]*>", doc, flags=re.IGNORECASE):
+        doc = "<!DOCTYPE html><html><head></head><body>" + doc + "</body></html>"
+
+    # Replace existing <title> or insert a new one at the start of <head>
+    m_title = re.search(r"<title[^>]*>.*?</title>", doc, flags=re.IGNORECASE | re.DOTALL)
+    if m_title:
+        doc = doc[:m_title.start()] + title_tag + doc[m_title.end():]
+    else:
+        m_head_open = re.search(r"<head[^>]*>", doc, flags=re.IGNORECASE)
+        insert_pos = m_head_open.end() if m_head_open else 0
+        doc = doc[:insert_pos] + "\n" + title_tag + "\n" + doc[insert_pos:]
+
+    # Inject extra head tags just before </head>
     if head_extra:
-        charset = '<!DOCTYPE html><meta charset="UTF-8">'
-        title_tag = f"<title>{title} - {PREFERRED_JOURNAL}</title>"
-        if charset not in head_extra:
-            head_extra = charset + "\n" + title_tag + "\n" + head_extra
-        m = re.search(r"</head\s*>", doc, re.IGNORECASE)
-        if m:
-            doc = doc[:m.start()] + head_extra + doc[m.start():]
+        m_head_close = re.search(r"</head\s*>", doc, flags=re.IGNORECASE)
+        if m_head_close:
+            doc = doc[:m_head_close.start()] + head_extra + doc[m_head_close.start():]
         else:
             doc = head_extra + doc
 
@@ -322,9 +345,23 @@ def build_simple_page_from_md(src_name: str, slug: str, title: str):
     dst_html = OUT / slug / "index.html"
     render_markdown_file(src_md, dst_html, title)
 
-def write_md_like_page(out_html: Path, md_body: str, head_extra: str = ""):
+def write_md_like_page(out_html: Path, md_body: str, title: str | None = None):
     body = md_body.replace("&", "&amp;").replace("<", "&lt;")
-    write_html(out_html, body, head_extra=head_extra)
+
+    rel_html = rel_out(out_html).as_posix()
+    origin = _current_origin()
+    page_url = f"{origin}/{rel_html}"
+
+    t = title or ""
+    head = [
+        '<meta charset="utf-8">',
+        f'<link rel="canonical" href="{page_url}">',
+        '<meta name="robots" content="index,follow">',
+        f'<meta name="description" content="{t}">',
+    ]
+    head_extra = "\n".join(head) + "\n"
+
+    write_html(out_html, body, head_extra=head_extra, title=t or "Index")
 
 def crumb_link(parts: list[str]) -> str:
     html = ['<nav class="breadcrumbs">']
@@ -541,11 +578,13 @@ def build_article_pages():
     if not records:
         return
 
-    groups: dict[str, list[dict]] = {}
+    # group by (top-level folder, stem)
+    groups: dict[tuple[str, str], list[dict]] = {}
     for r in records:
-        groups.setdefault(r["stem"], []).append(r)
+        key = (r["top"], r["stem"])
+        groups.setdefault(key, []).append(r)
 
-    for stem, items in groups.items():
+    for (top, stem), items in groups.items():
         def sort_key(it):
             dt = _to_datetime(it["date"])
             return dt or datetime.fromtimestamp(it["prov"].stat().st_mtime)
@@ -556,12 +595,12 @@ def build_article_pages():
         # --- each VERSION page ---
         for it in versions:
             src = it["prov"].parent
-            out_dir = OUT/"prints"/stem/it["doi_prefix"]/it["doi_suffix"]
+            out_dir = OUT / top / stem / it["doi_prefix"] / it["doi_suffix"]
             out_dir.mkdir(parents=True, exist_ok=True)
 
             for f in src.iterdir():
                 if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
-                    dst = OUT/rel(f)
+                    dst = OUT / rel(f)
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dst)
 
@@ -585,7 +624,7 @@ def build_article_pages():
             if local_pmd:
                 top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
-            breadcrumbs = crumb_link(["prints", stem, it["doi_prefix"], it["doi_suffix"]])
+            breadcrumbs = crumb_link([top, stem, it["doi_prefix"], it["doi_suffix"]])
             files_list = []
             prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
             if local_html:
@@ -638,7 +677,7 @@ def build_article_pages():
             body.append("</main>")
 
             stem_seg = quote(stem, safe="")
-            version_url = f"{origin}/prints/{stem_seg}/{it['doi_prefix']}/{it['doi_suffix']}/"
+            version_url = f"{origin}/{top}/{stem_seg}/{it['doi_prefix']}/{it['doi_suffix']}/"
 
             head = []
             head.append('<meta charset="utf-8">')
@@ -705,25 +744,26 @@ def build_article_pages():
             head_extra = "\n".join(head) + "\n"
             body_html = "\n".join(body)
 
-            write_html(out_dir/"index.html", body_html, head_extra=head_extra)
+            write_html(out_dir/"index.html", body_html, head_extra=head_extra, title=it["title"])
 
-            alias_dir = OUT/"prints"/"doi"/it["doi_prefix"]/it["doi_suffix"]
+            # DOI aliases live under the same top-level (prints/doi or documents/doi)
+            alias_dir = OUT / top / "doi" / it["doi_prefix"] / it["doi_suffix"]
             alias_dir.mkdir(parents=True, exist_ok=True)
-            write_html(alias_dir/"index.html", body_html, head_extra=head_extra)
+            write_html(alias_dir/"index.html", body_html, head_extra=head_extra, title=it["title"])
 
             mirror_dir = OUT / rel(src)
             mirror_dir.mkdir(parents=True, exist_ok=True)
-            write_html(mirror_dir/"index.html", body_html, head_extra=head_extra)
+            write_html(mirror_dir/"index.html", body_html, head_extra=head_extra, title=it["title"])
 
         # --- STEM page (latest) ---
         it = latest
         src = it["prov"].parent
-        stem_out = OUT/"prints"/stem
+        stem_out = OUT / top / stem
         stem_out.mkdir(parents=True, exist_ok=True)
 
         for f in src.iterdir():
             if f.is_file() and f.suffix.lower() in MIRROR_EXTS:
-                dst = OUT/rel(f)
+                dst = OUT / rel(f)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(f, dst)
 
@@ -739,15 +779,23 @@ def build_article_pages():
             except Exception:
                 html_body = ""
 
-        breadcrumbs = crumb_link(["prints", stem])
+        breadcrumbs = crumb_link([top, stem])
+
+        # Only treat records with the SAME concept DOI as versions
+        same_family = []
+        for v in versions:
+            if it["concept"] and v["concept"] == it["concept"]:
+                same_family.append(v)
+            elif not it["concept"] and not v["concept"]:
+                same_family.append(v)
 
         versions_list = []
-        for v in versions:
-            ver_url = f"/prints/{stem}/{v['doi_prefix']}/{v['doi_suffix']}/"
+        for v in same_family:
+            ver_url  = f"/{top}/{stem}/{v['doi_prefix']}/{v['doi_suffix']}/"
             doi_disp = f"{v['doi_prefix']}/{v['doi_suffix']}"
             date_disp = v["date"] or ""
             versions_list.append(f"<li>{date_disp} — <a href='{ver_url}'>{doi_disp}</a></li>")
-        versions_ul = "<ul>" + "".join(versions_list) + "</ul>"
+        versions_ul = "<ul>" + "".join(versions_list) + "</ul>" if versions_list else ""
 
         files_list = []
         prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
@@ -810,7 +858,7 @@ def build_article_pages():
         body.append("</main>")
 
         stem_seg = quote(stem, safe="")
-        stem_url = f"{origin}/prints/{stem_seg}/"
+        stem_url = f"{origin}/{top}/{stem_seg}/"
         head = []
         head.append('<meta charset="utf-8">')
         head.append(f'<link rel="canonical" href="{stem_url}">')
@@ -892,8 +940,8 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
     title = (rel_dir.name or f"{REPO} index")
 
     lines = []
-    lines.append(f"## {title}")
-    lines.append("")
+    # lines.append(f"## {title}")
+    # lines.append("")
     lines.append(breadcrumbs(rel_dir))
     lines.append("")
 
@@ -921,7 +969,7 @@ def format_dir_index(dir_abs: Path, items: list[Item]) -> str:
                 else:
                     lines.append(f"  - [open]({url_local})")
     lines.append("")
-    return "\n".join(lines)
+    return title, "\n".join(lines)
 
 def copy_static():
     OUT.mkdir(parents=True, exist_ok=True)
@@ -1018,6 +1066,7 @@ def build_rss_feed():
         rel_parts = rel(prov).parts
         if len(rel_parts) < 2:
             continue
+        top  = rel_parts[0]
         stem = rel_parts[1]
 
         pf_block = data.get("parsed_from_pnpmd") or {}
@@ -1037,13 +1086,14 @@ def build_rss_feed():
         if permalink and permalink.startswith("http"):
             item_url = permalink.rstrip("/")
         else:
-            item_url = f"{origin}/prints/{quote(stem, safe='')}/"
+            item_url = f"{origin}/{quote(top, safe='')}/{quote(stem, safe='')}/"
 
         dt = _to_datetime(date_norm) or datetime.fromtimestamp(prov.stat().st_mtime)
-        keep = by_stem.get(stem)
+        keep = by_stem.get((top, stem))
         if not keep or dt > keep["date"]:
-            by_stem[stem] = {
+            by_stem[(top, stem)] = {
                 "stem": stem,
+                "top": top,
                 "title": title,
                 "authors": authors,
                 "abstract": abstract,
@@ -1208,8 +1258,8 @@ def main():
                 continue
             items.append(Item(name=p.name, is_dir=False, mtime=p.stat().st_mtime, path=p))
 
-        md_body = format_dir_index(d, items)
-        write_md_like_page(out_html, md_body)
+        title, md_body = format_dir_index(d, items)
+        write_md_like_page(out_html, md_body, title=title)
 
     copy_static()
     build_sitemap_and_robots()
