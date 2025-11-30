@@ -10,6 +10,8 @@
         display: inline-block;
     }
 
+
+
     /* default: raw markdown view (no JS) */
     body {
         white-space: preserve-breaks;
@@ -123,5 +125,43 @@
 
             document.body.innerHTML = html;
         } catch (e) { }
+    })();
+</script>
+<script>
+    (function () {
+        try {
+            // Only load MathJax on mirrored markdown views (*.md.html)
+            var path = window.location.pathname || "";
+            if (!/\.md\.html$/i.test(path)) {
+                return;
+            }
+
+            // Avoid double-loading
+            if (window.MathJax) {
+                return;
+            }
+
+            // MathJax v3 configuration: $...$ and $$...$$
+            window.MathJax = {
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']]
+                },
+                options: {
+                    // Don't try to typeset inside code/pre etc.
+                    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+                },
+                svg: {
+                    fontCache: 'global'
+                }
+            };
+
+            var script = document.createElement('script');
+            script.async = true;
+            script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg-full.js';
+            document.head.appendChild(script);
+        } catch (e) {
+            // silent failure is fine here
+        }
     })();
 </script>
