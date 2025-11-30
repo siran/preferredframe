@@ -1,7 +1,14 @@
 <meta charset="utf-8">
 <style>
-
-    h1, h2,h3,h4,h5,h6 {font-size: 1em; display:inline-block;}
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-size: 1em;
+        display: inline-block;
+    }
 
     /* default: raw markdown view (no JS) */
     body {
@@ -9,6 +16,14 @@
         font-family: monospace;
         font-size: 18px;
         line-height: 1.5;
+    }
+
+    a {
+        text-decoration: none;
+    }
+
+    a.breadcrumbs:visited {
+        text-decoration: none;
     }
 
     /* markdown-style pages (directory indexes, header/footer text) */
@@ -32,31 +47,81 @@
     main.paper * {
         white-space: normal;
     }
-
 </style>
+<script>
+    (function () {
+        // --- Breadcrumb injector for *.md.html pages ---
+        try {
+            var path = window.location && window.location.pathname || "";
+
+            // Only for mirrored markdown pages
+            if (/\.md\.html$/i.test(path)) {
+
+                function buildBreadcrumbMarkdown(pathname) {
+                    var p = pathname.replace(/^\/+|\/+$/g, "");
+                    if (!p) return "[🏠 Home](/)";
+
+                    var segments = p.split("/");
+                    var crumbs = ["[🏠 Home](/)"];
+                    var accum = [];
+
+                    // all except last (directories)
+                    for (var i = 0; i < segments.length - 1; i++) {
+                        accum.push(segments[i]);
+                        var label = decodeURIComponent(segments[i]);
+                        var url = "/" + accum.join("/") + "/";
+                        crumbs.push("[" + label + "](" + url + ")");
+                    }
+
+                    // last segment is file
+                    var last = segments[segments.length - 1];
+                    var lastLabel = decodeURIComponent(last.replace(/\.html$/i, ""));
+                    crumbs.push(lastLabel);
+
+                    return crumbs.join(" / ");
+                }
+
+                // Insert breadcrumb markdown above body
+                var bcMD = buildBreadcrumbMarkdown(path);
+                document.body.innerHTML = bcMD + "\n\n" + document.body.innerHTML;
+            }
+        } catch (e) { }
+    })();
+</script>
 <script>
     (function () {
         try {
             var html = document.body.innerHTML;
 
-            // Markdown headings: lines starting with 1–6 '#' + space
-            // "# Title" -> <h1>Title</h1>, etc.
-            html = html.replace(/(^|\n)(#{1,6})\s+([^\n]+)/g, function (_m, prefix, hashes, text) {
-                var level = hashes.length;
-                if (level > 6) level = 6;
-                return '<h' + level + '>' + text.trim() + '</h' + level + '>';
-            });
+            // Markdown images: ![alt](url "optional title")
+            // Run this BEFORE link conversion.
+            html = html.replace(
+                /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+                function (_m, alt, src, title) {
+                    src = src.trim();
+                    alt = (alt || "").replace(/"/g, "&quot;");
+                    var t = title ? ' title="' + title.replace(/"/g, "&quot;") + '"' : "";
+                    return '<img src="' + src + '" alt="' + alt + '"' + t + '>';
+                }
+            );
+
+            // Headings: # .. ###### at start of line
+            html = html.replace(/(^|\n)######\s+([^\n]+)(?=\n|$)/g, "$1<h6>$2</h6>");
+            html = html.replace(/(^|\n)#####\s+([^\n]+)(?=\n|$)/g, "$1<h5>$2</h5>");
+            html = html.replace(/(^|\n)####\s+([^\n]+)(?=\n|$)/g, "$1<h4>$2</h4>");
+            html = html.replace(/(^|\n)###\s+([^\n]+)(?=\n|$)/g, "$1<h3>$2</h3>");
+            html = html.replace(/(^|\n)##\s+([^\n]+)(?=\n|$)/g, "$1<h2>$2</h2>");
+            html = html.replace(/(^|\n)#\s+([^\n]+)(?=\n|$)/g, "$1<h1>$2</h1>");
 
             // Markdown links: [text](url)
             html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, t, u) {
-                return '<a href="' + u.trim() + '">' + t + '</a>';
+                return '<a href="' + u.trim() + '">' + t + "</a>";
             });
 
-            // Bare URLs → <a>; avoid those already inside ](url)
-            html = html.replace(/(^|\s)((https?:\/\/[^\s)]+))/g, '$1<a href="$2">$2</a>');
+            // Bare URLs → <a>; don't match inside ) etc.
+            html = html.replace(/(^|\s)(https?:\/\/[^\s)]+)/g, '$1<a href="$2">$2</a>');
 
             document.body.innerHTML = html;
-
         } catch (e) { }
     })();
 </script>
