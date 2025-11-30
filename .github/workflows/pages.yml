@@ -32,9 +32,7 @@ jobs:
           fi
 
       - name: Build site
-        env:
-          BASE_URL: "https://preferredframe.com"
-        run: python .scripts/build_site.py
+        run: python .scripts/build_site/build_site.py
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
