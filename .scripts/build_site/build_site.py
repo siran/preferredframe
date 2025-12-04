@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, subprocess, urllib.parse, shutil, re, json, io
+import os, subprocess, urllib.parse, shutil, re, json, io, sys, concurrent.futures
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse, quote
@@ -271,20 +271,33 @@ def _current_origin() -> str:
 
 # ---------- templating ----------
 def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str = ""):
-    # For mirrored Markdown views (*.md.html) we want a bare page: just
-    # the body content plus coda (styles + JS).
-    is_md_html = str(out_html).endswith(".md.html")
-
-    header = load_text(SRC / "header.html") if not is_md_html else ""
-    footer = load_text(SRC / "footer.html") if not is_md_html else ""
+    # All pages (including *.md.html mirrors) get header + breadcrumb (for mirrors)
+    # + body + footer + coda.
+    header = load_text(SRC / "header.html")
+    footer = load_text(SRC / "footer.html")
     coda   = load_text(SRC / "coda.html")
 
-    doc = "".join(s for s in (header, body_html, footer) if s)
+    rel_html = rel_out(out_html).as_posix()
+    breadcrumb_html = ""
+    if rel_html.endswith(".md.html"):
+        # Use same crumb_link style as article pages, based on path without trailing .html
+        rel_no_html = re.sub(r"\.html$", "", rel_html)
+        parts = list(Path(rel_no_html).parts)
+        if parts and parts[-1] == "index":
+            parts = parts[:-1]
+        breadcrumb_html = crumb_link(parts)
 
-    # NOTE: head_extra injection is currently disabled. If you later want
-    # per-page <title>/meta again, you can re-enable this block and it will
-    # work for *all* non-.md.html pages.
-    #
+    doc = "".join(
+        s for s in (
+            header,
+            breadcrumb_html + "\n" if breadcrumb_html else "",
+            body_html,
+            footer,
+        ) if s
+    )
+
+    # NOTE: head_extra injection is currently disabled. Re-enable this block
+    # if per-page <title>/<meta> should be injected again.
     if head_extra:
         charset = '<!DOCTYPE html><meta charset="UTF-8">'
         title_tag = f"<title>{title} - {PREFERRED_JOURNAL}</title>"
@@ -294,7 +307,7 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
         if m:
             doc = doc[:m.start()] + head_extra + doc[m.start():]
         else:
-         doc = head_extra + doc
+            doc = head_extra + doc
 
     ny = ZoneInfo("America/New_York")
     now = datetime.now(ny)
@@ -313,6 +326,18 @@ def write_html(out_html: Path, body_html: str, head_extra: str = "", title: str 
 
 def render_markdown_file(src: Path, dst_html: Path, title: str):
     md = src.read_text(encoding="utf-8")
+    # Replace YAML front matter with a Markdown H1 so mirrors show the title, not raw YAML.
+    m_front = re.match(r"^---\s*\n(.*?)\n---\s*\n", md, flags=re.DOTALL)
+    if m_front:
+        front = m_front.group(1)
+        title_val = None
+        m_title = re.search(r"^title\s*:\s*(.+)$", front, flags=re.MULTILINE)
+        if m_title:
+            title_val = m_title.group(1).strip().strip('"\'')
+        # Remove front matter
+        md = md[m_front.end():]
+        if title_val:
+            md = f"# {title_val}\n\n" + md
     body_html = md
 
     rel_html = dst_html.relative_to(OUT).as_posix()
@@ -326,6 +351,108 @@ def render_markdown_file(src: Path, dst_html: Path, title: str):
     head_extra = "\n".join(head) + "\n"
 
     write_html(dst_html, body_html, head_extra=head_extra, title=title)
+
+def _render_single_book(book_dir: Path, meta_name: str, render_py: Path) -> tuple[Path, int, str]:
+    cmd = [
+        sys.executable,
+        str(render_py),
+        "--html",
+        "--epub",
+        "--omit-numbering",
+        "--omit-toc",
+        meta_name,
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=book_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    return book_dir, proc.returncode, proc.stdout or ""
+
+def render_book_dirs(skip: bool = False, max_workers: int | None = None):
+    """
+    Find directories that declare a book.yml/book.yaml and render them to
+    HTML+EPUB (skip PDF) before mirroring the tree into site().
+
+    skip=True will bypass book rendering (useful for local quick builds).
+    max_workers limits parallelism; default uses min(4, number of books).
+    """
+    if skip:
+        print("[DEBUG] Skipping book renders (--skip-books)")
+        return
+
+    render_py = ROOT / ".scripts" / "render" / "render.py"
+    if not render_py.exists():
+        print(f"[DEBUG] render.py not found at {render_py}; skipping book renders")
+        return
+
+    seen: set[Path] = set()
+    candidates: list[Path] = []
+    for ext in ("book.yml", "book.yaml"):
+        candidates.extend(ROOT.rglob(ext))
+
+    for meta in candidates:
+        try:
+            meta_rel = rel(meta)
+        except Exception:
+            continue
+
+        # Skip gitignored, OUT/, excluded, or hidden paths
+        if is_gitignored(meta):
+            continue
+        try:
+            meta.relative_to(OUT)
+            continue
+        except ValueError:
+            pass
+
+        parts = meta_rel.parts
+        if not parts:
+            continue
+        if parts[0] in EXCLUDE_NAMES:
+            continue
+        if any(p.startswith(".") and p != ".well-known" for p in parts):
+            continue
+
+        book_dir = meta.parent
+        if book_dir in seen:
+            continue
+        seen.add(book_dir)
+
+        print(f"[DEBUG] Queued book render: {rel(book_dir)} ({meta.name})")
+
+    book_dirs = list(seen)
+    if not book_dirs:
+        return
+
+    workers = max_workers or min(4, len(book_dirs))
+    print(f"[DEBUG] Rendering {len(book_dirs)} book(s) with {workers} worker(s)")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = []
+        for book_dir in book_dirs:
+            meta_name = None
+            for ext in ("book.yml", "book.yaml"):
+                if (book_dir / ext).exists():
+                    meta_name = ext
+                    break
+            if not meta_name:
+                continue
+            futures.append(
+                ex.submit(_render_single_book, book_dir, meta_name, render_py)
+            )
+
+        for fut in concurrent.futures.as_completed(futures):
+            book_dir, rc, out = fut.result()
+            if out:
+                print(out, end="" if out.endswith("\n") else "\n")
+            if rc != 0:
+                print(
+                    f"[DEBUG] WARNING: book render failed (rc={rc}) "
+                    f"for {rel(book_dir)}; continuing build"
+                )
 
 def build_simple_page_from_md(src_name: str, slug: str, title: str):
     src_md = ROOT / src_name
@@ -354,7 +481,7 @@ def write_md_like_page(out_html: Path, md_body: str, title: str | None = None):
 
 def crumb_link(parts: list[str]) -> str:
     html = ['<nav class="breadcrumbs">']
-    html.append('<a href="/"> / </a>')
+    html.append('<a href="/">🏠 Home</a>')
     base = ""
     for label in parts:
         base = base.rstrip("/") + "/" + quote(label)
@@ -613,6 +740,23 @@ def build_article_pages():
             if local_pmd:
                 top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
+            share_html = ""
+            doi_clean = (it["doi"] or "").replace(" ", "")
+            doi_fallback = ""
+            if it["doi_prefix"] and it["doi_suffix"]:
+                doi_fallback = f"{it['doi_prefix']}/{it['doi_suffix']}"
+            if doi_clean or doi_fallback:
+                doi_value = doi_clean or doi_fallback
+                doi_url = f"https://doi.org/{doi_value}"
+                origin = _current_origin()
+                doi_alias = f"{origin}/{top}/doi/{it['doi_prefix']}/{it['doi_suffix']}"
+                share_html = (
+                    "<div class=\"share\"><strong>Share as:</strong><br>"
+                    f'<a href="{doi_alias}">{doi_alias}</a><br>'
+                    f'<a href="{doi_url}">{doi_url}</a>'
+                    "</div>"
+                )
+
             breadcrumbs = crumb_link([top, stem, it["doi_prefix"], it["doi_suffix"]])
             files_list = []
             prov_local = f"/{(OUT/rel(it['prov'])).relative_to(OUT).as_posix()}"
@@ -636,6 +780,8 @@ def build_article_pages():
                 body.append(f"<p class='authors'>{authors_html}</p>")
             body.append(f"<p class='publine'>{PREFERRED_JOURNAL} — {month_year(it['date'])}</p>")
             body.append("<p class='links'>" + " · ".join(top_links) + "</p>")
+            if share_html:
+                body.append(share_html)
 
             if it["onesent"]:
                 body.append("<h2>One-Sentence Summary</h2>")
@@ -805,6 +951,23 @@ def build_article_pages():
         if local_pmd:
             top_links.append(f'<a href="{local_pmd}">Preprocessed MD</a>')
 
+        share_html = ""
+        doi_clean = (it["doi"] or "").replace(" ", "")
+        doi_fallback = ""
+        if it["doi_prefix"] and it["doi_suffix"]:
+            doi_fallback = f"{it['doi_prefix']}/{it['doi_suffix']}"
+        if doi_clean or doi_fallback:
+            doi_value = doi_clean or doi_fallback
+            doi_url = f"https://doi.org/{doi_value}"
+            origin = _current_origin()
+            doi_alias = f"{origin}/{top}/doi/{it['doi_prefix']}/{it['doi_suffix']}"
+            share_html = (
+                "<div class=\"share\"><strong>Share as:</strong><br>"
+                f'<a href="{doi_alias}">{doi_alias}</a><br>'
+                f'<a href="{doi_url}">{doi_url}</a>'
+                "</div>"
+            )
+
         display_authors = it["authors"]
         authors_html = ", ".join(filter(None, (fmt_author(a) for a in display_authors)))
 
@@ -816,6 +979,8 @@ def build_article_pages():
             body.append(f"<p class='authors'>{authors_html}</p>")
         body.append(f"<p class='publine'>{PREFERRED_JOURNAL} — {month_year(it['date'])}</p>")
         body.append("<p class='links'>" + " · ".join(top_links) + "</p>")
+        if share_html:
+            body.append(share_html)
         if versions_ul:
             body.append("<h2>Versions</h2>")
             body.append(versions_ul)
@@ -1137,6 +1302,25 @@ def build_rss_feed():
 
 # ---------- build ----------
 def main():
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Build static site")
+    ap.add_argument(
+        "--skip-books",
+        action="store_true",
+        help="Skip rendering book.yml/book.yaml directories (faster local builds).",
+    )
+    ap.add_argument(
+        "--book-workers",
+        type=int,
+        default=None,
+        help="Max parallel workers for book renders (default: min(4, #books)).",
+    )
+    args = ap.parse_args()
+
+    global PREFERRED_JOURNAL
+    PREFERRED_JOURNAL = _compute_preferred_journal()
+
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT/".nojekyll").write_text("", encoding="utf-8")
     write_cname_if_custom(BASE_URL)
@@ -1155,19 +1339,23 @@ def main():
             if not src_path.is_file():
                 continue
             rel_path = src_path.relative_to(site_src)
-            print(f"[DEBUG] site asset found: {rel_path}")
-            if src_path.suffix.lower() == ".md":
-                dst_rel = rel_path.with_suffix(rel_path.suffix + ".html")
-                dst_path = OUT / dst_rel
-                print(f"[DEBUG]   MD (site) -> {dst_rel}")
-                render_markdown_file(src_path, dst_path, title=rel_path.stem)
-            else:
-                dst_path = OUT / rel_path
-                print(f"[DEBUG]   COPY -> {rel_path} → {dst_path.relative_to(OUT)}")
-                dst_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_path, dst_path)
+        print(f"[DEBUG] site asset found: {rel_path}")
+        if src_path.suffix.lower() == ".md":
+            dst_rel = rel_path.with_suffix(rel_path.suffix + ".html")
+            dst_path = OUT / dst_rel
+            print(f"[DEBUG]   MD (site) -> {dst_rel}")
+            render_markdown_file(src_path, dst_path, title=rel_path.stem)
+        else:
+            dst_path = OUT / rel_path
+            print(f"[DEBUG]   COPY -> {rel_path} → {dst_path.relative_to(OUT)}")
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dst_path)
     else:
         print("[DEBUG] WARNING: site_src does not exist; no site/ assets copied")
+
+    # Render any books (book.yml/book.yaml) ahead of mirroring so their
+    # generated .md/.pandoc.md/.html/.epub files are present in the tree.
+    render_book_dirs(skip=args.skip_books, max_workers=args.book_workers)
 
     build_article_pages()
 
@@ -1293,10 +1481,4 @@ def _compute_preferred_journal() -> str:
     return DEFAULT_JOURNAL
 
 if __name__ == "__main__":
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT/".nojekyll").write_text("", encoding="utf-8")
-
-    write_cname_if_custom(BASE_URL)
-
-    PREFERRED_JOURNAL = _compute_preferred_journal()
     main()
